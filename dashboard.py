@@ -8,6 +8,8 @@ import math
 import time
 import os
 import json
+import urllib.request
+import urllib.error
 
 st.set_page_config(
     page_title="Mastermind Quant Investing Terminal",
@@ -751,13 +753,126 @@ def get_spy_history():
     return pd.DataFrame()
 
 
-def fetch_ticker_bundle(ticker):
-    """Fetch (info, history) for a ticker with retries and honest failure.
+def _yf_history(ticker, period="2y"):
+    """Fetch price history from Yahoo with retries. Prices are the reliable part of the
+    free Yahoo feed, so we keep using it even when fundamentals come from FMP."""
+    for attempt in range(3):
+        try:
+            hist = yf.Ticker(ticker).history(period=period)
+            if hist is not None and not hist.empty:
+                return hist
+        except Exception:
+            time.sleep(1.0 * (attempt + 1))
+    return pd.DataFrame()
 
-    Yahoo's free endpoint is flaky: it intermittently returns empty dicts, throttles,
-    or errors. We retry a few times with backoff. If we still can't get a price OR any
-    fundamentals, we raise DataUnavailable so the caller can SKIP the ticker instead of
-    inventing neutral 50-scores (which is what silently poisoned rankings before)."""
+
+# ----- Financial Modeling Prep (optional upgrade over Yahoo for fundamentals) -----
+FMP_BASE = "https://financialmodelingprep.com/stable"
+
+
+def fmp_available():
+    return bool(_get_secret("FMP_API_KEY"))
+
+
+def _fmp_get(path):
+    """Call one FMP 'stable' endpoint, return the first record (dict) or None."""
+    key = _get_secret("FMP_API_KEY")
+    if not key:
+        return None
+    sep = "&" if "?" in path else "?"
+    url = f"{FMP_BASE}/{path}{sep}apikey={key}"
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=20) as r:
+                data = json.loads(r.read().decode())
+            if isinstance(data, dict) and (data.get("Error Message") or data.get("error")):
+                return None
+            return data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+        except Exception:
+            time.sleep(1.0 * (attempt + 1))
+    return None
+
+
+def fetch_fmp_fundamentals(ticker):
+    """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
+    DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
+    Yahoo; FMP is used only for the fundamentals it does better."""
+    profile = _fmp_get(f"profile?symbol={ticker}")
+    if not profile or not profile.get("price"):
+        raise DataUnavailable(f"FMP has no data for '{ticker}' (delisted/renamed/invalid).")
+    ratios = _fmp_get(f"ratios-ttm?symbol={ticker}") or {}
+    km = _fmp_get(f"key-metrics-ttm?symbol={ticker}") or {}
+    growth = _fmp_get(f"financial-growth?symbol={ticker}&period=annual&limit=1") or {}
+
+    price = safe_float(profile.get("price"))
+    mktcap = safe_float(profile.get("marketCap"))
+    shares = (mktcap / price) if (mktcap and price) else None
+
+    def per_share_to_total(field):
+        v = safe_float(ratios.get(field))
+        return (v * shares) if (v is not None and shares) else None
+
+    total_revenue = per_share_to_total("revenuePerShareTTM")
+    ebitda_margin = safe_float(ratios.get("ebitdaMarginTTM"))
+    dte = safe_float(ratios.get("debtToEquityRatioTTM"))
+
+    info = {
+        "shortName": profile.get("companyName") or ticker,
+        "sector": profile.get("sector") or "Unknown",
+        "industry": profile.get("industry") or "Unknown",
+        "currentPrice": price,
+        "regularMarketPrice": price,
+        "marketCap": mktcap,
+        "enterpriseValue": safe_float(ratios.get("enterpriseValueTTM")) or safe_float(km.get("enterpriseValueTTM")),
+        "trailingPE": safe_float(ratios.get("priceToEarningsRatioTTM")),
+        "forwardPE": None,  # not on FMP free; scoring degrades gracefully
+        "trailingPegRatio": safe_float(ratios.get("priceToEarningsGrowthRatioTTM")),
+        "priceToSalesTrailing12Months": safe_float(ratios.get("priceToSalesRatioTTM")),
+        "enterpriseToEbitda": safe_float(ratios.get("enterpriseValueMultipleTTM")) or safe_float(km.get("evToEBITDATTM")),
+        "priceToBook": safe_float(ratios.get("priceToBookRatioTTM")),
+        "profitMargins": safe_float(ratios.get("netProfitMarginTTM")),
+        "operatingMargins": safe_float(ratios.get("operatingProfitMarginTTM")),
+        "grossMargins": safe_float(ratios.get("grossProfitMarginTTM")),
+        "ebitdaMargins": ebitda_margin,
+        "returnOnEquity": safe_float(km.get("returnOnEquityTTM")),
+        "returnOnAssets": safe_float(km.get("returnOnAssetsTTM")),
+        "beta": safe_float(profile.get("beta")),
+        # FMP gives a plain ratio (0.14); yfinance-based scoring expects a percent (14).
+        "debtToEquity": (dte * 100) if dte is not None else None,
+        "currentRatio": safe_float(ratios.get("currentRatioTTM")),
+        "quickRatio": safe_float(ratios.get("quickRatioTTM")),
+        "dividendYield": safe_float(ratios.get("dividendYieldTTM")),
+        "payoutRatio": safe_float(ratios.get("dividendPayoutRatioTTM")),
+        "totalRevenue": total_revenue,
+        "freeCashflow": per_share_to_total("freeCashFlowPerShareTTM"),
+        "operatingCashflow": per_share_to_total("operatingCashFlowPerShareTTM"),
+        "totalCash": per_share_to_total("cashPerShareTTM"),
+        "totalDebt": per_share_to_total("interestDebtPerShareTTM"),
+        "ebitda": (ebitda_margin * total_revenue) if (ebitda_margin is not None and total_revenue) else None,
+        "revenueGrowth": safe_float(growth.get("revenueGrowth")),
+        "earningsGrowth": safe_float(growth.get("netIncomeGrowth")),
+        # Authoritative values we prefer over the derived proxies:
+        "_source": "FMP (SEC filings)",
+        "_fmp_roic": safe_float(km.get("returnOnInvestedCapitalTTM")),
+        "_fmp_fcf_yield": safe_float(km.get("freeCashFlowYieldTTM")),
+        "_fmp_ev_to_fcf": safe_float(km.get("evToFreeCashFlowTTM")),
+    }
+    return info
+
+
+def fetch_ticker_bundle(ticker):
+    """Fetch (info, history) for a ticker, honestly failing on dead tickers.
+
+    Uses FMP for fundamentals when a key is configured (SEC-sourced, more accurate),
+    otherwise Yahoo. Price history always comes from Yahoo (its reliable, free part).
+    If neither price nor fundamentals can be had, raises DataUnavailable so the caller
+    SKIPS the ticker instead of inventing neutral 50-scores."""
+    if fmp_available():
+        info = fetch_fmp_fundamentals(ticker)   # raises DataUnavailable if not found
+        hist = _yf_history(ticker)
+        return info, hist
+
+    # ---- Yahoo-only path ----
     last_err = None
     info, hist = {}, pd.DataFrame()
     for attempt in range(3):
@@ -768,6 +883,7 @@ def fetch_ticker_bundle(ticker):
                 info = stock.info or {}
             except Exception as e:
                 info, last_err = {}, e
+            info["_source"] = "Yahoo Finance"
             has_price = bool(info.get("currentPrice") or info.get("regularMarketPrice"))
             has_hist = hist is not None and not hist.empty
             has_fundamentals = bool(info.get("marketCap") or info.get("totalRevenue"))
@@ -857,6 +973,14 @@ def get_quant_score(ticker):
     if operating_margin is not None and invested_capital_proxy and invested_capital_proxy > 0 and total_revenue:
         estimated_operating_income = total_revenue * operating_margin
         roic_proxy = estimated_operating_income / invested_capital_proxy
+
+    # When FMP provides authoritative figures, prefer them over our derived proxies.
+    if info.get("_fmp_roic") is not None:
+        roic_proxy = safe_float(info.get("_fmp_roic"))
+    if info.get("_fmp_fcf_yield") is not None:
+        fcf_yield = safe_float(info.get("_fmp_fcf_yield"))
+    if info.get("_fmp_ev_to_fcf") is not None:
+        ev_to_fcf = safe_float(info.get("_fmp_ev_to_fcf"))
 
     if len(hist) > 252:
         current_price = safe_float(hist["Close"].iloc[-1], price)
@@ -1255,6 +1379,7 @@ def get_quant_score(ticker):
         "Research Time": research_time,
         "Alerts": " | ".join(alerts) if alerts else "No major signal",
         "Data Coverage %": round(data_coverage * 100),
+        "Data Source": info.get("_source", "Yahoo Finance"),
         "Scan Date": today_string(),
         "Last Updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -2356,6 +2481,11 @@ def stock_deep_dive():
             st.warning(f"⚠️ Limited data for {ticker}: only {row.get('Data Coverage %')}% of key metrics were available, so scores are low-confidence.")
         st.subheader(f"{row['Ticker']} — {row['Company']}")
         st.write(f"**Sector:** {row['Sector']} | **Industry:** {row['Industry']}")
+        st.caption(
+            f"📊 Fundamentals: **{row.get('Data Source', 'Yahoo Finance')}** · "
+            f"Data coverage: **{row.get('Data Coverage %', 'N/A')}%** · "
+            f"Prices/news: Yahoo Finance · As of {row.get('Scan Date', today_string())}"
+        )
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Research Action", verdict)
         c2.metric("Conviction", f"{row['Conviction Score']}/100")
