@@ -28,6 +28,8 @@ jobs:
 
       - name: Run quant scan
         run: python run_scan.py
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
       - name: Commit updated scores
         run: |
