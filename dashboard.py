@@ -1086,7 +1086,9 @@ def get_quant_score(ticker):
         safe_score(revenue_growth, -0.03, 0.25) * 0.10
     )
 
-    fair_value_estimates = []
+    # Each independent method casts a "vote" on fair value. We keep them named so we can
+    # show a HONEST RANGE (how much the methods disagree) instead of one false-precision number.
+    fv_methods = []
     if forward_pe and price:
         fair_pe = 18
         if quality_score >= 80 and growth_score >= 75:
@@ -1097,7 +1099,7 @@ def get_quant_score(ticker):
             fair_pe = 14
         eps_forward = price / forward_pe if forward_pe else None
         if eps_forward:
-            fair_value_estimates.append(eps_forward * fair_pe)
+            fv_methods.append(("Forward P/E", eps_forward * fair_pe))
 
     if peg and price:
         fair_peg = 1.4
@@ -1107,7 +1109,7 @@ def get_quant_score(ticker):
             fair_peg = 1.7
         if growth_score < 45:
             fair_peg = 1.1
-        fair_value_estimates.append(price * (fair_peg / peg))
+        fv_methods.append(("PEG", price * (fair_peg / peg)))
 
     if ev_to_fcf and price:
         fair_ev_fcf = 20
@@ -1115,7 +1117,7 @@ def get_quant_score(ticker):
             fair_ev_fcf = 28
         elif quality_score < 50:
             fair_ev_fcf = 14
-        fair_value_estimates.append(price * (fair_ev_fcf / ev_to_fcf))
+        fv_methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
 
     if price and len(hist) > 252:
         high_52 = safe_float(hist["Close"].tail(252).max())
@@ -1123,7 +1125,7 @@ def get_quant_score(ticker):
         midpoint = (high_52 + low_52) / 2 if high_52 and low_52 else None
         if midpoint:
             quality_adjustment = 1 + ((quality_score - 50) / 250)
-            fair_value_estimates.append(midpoint * quality_adjustment)
+            fv_methods.append(("52-week midpoint", midpoint * quality_adjustment))
 
     if price:
         multi_factor_adjustment = (
@@ -1132,9 +1134,13 @@ def get_quant_score(ticker):
             (growth_score - 50) / 450 +
             (cash_flow_score - 50) / 400
         )
-        fair_value_estimates.append(price * (1 + multi_factor_adjustment))
+        fv_methods.append(("Multi-factor", price * (1 + multi_factor_adjustment)))
 
+    fair_value_estimates = [v for _, v in fv_methods]
     fair_value = sum(fair_value_estimates) / len(fair_value_estimates) if fair_value_estimates else price
+    fair_value_low = min(fair_value_estimates) if fair_value_estimates else None
+    fair_value_high = max(fair_value_estimates) if fair_value_estimates else None
+    fair_value_methods = " | ".join(f"{name}: {money(v)}" for name, v in fv_methods) if fv_methods else "None"
     margin_of_safety = ((fair_value - price) / fair_value) if fair_value and price else None
     upside_to_fair_value = ((fair_value - price) / price) if fair_value and price else None
 
@@ -1307,6 +1313,9 @@ def get_quant_score(ticker):
         "Industry": industry,
         "Price": round(price, 2) if price else None,
         "Fair Value": round(fair_value, 2) if fair_value else None,
+        "Fair Value Low": round(fair_value_low, 2) if fair_value_low else None,
+        "Fair Value High": round(fair_value_high, 2) if fair_value_high else None,
+        "Valuation Methods": fair_value_methods,
         "Upside %": round(upside_to_fair_value * 100, 1) if upside_to_fair_value is not None else None,
         "Margin of Safety %": round(margin_of_safety * 100, 1) if margin_of_safety is not None else None,
         "Sell Target": round(sell_target, 2) if sell_target else None,
@@ -2545,7 +2554,24 @@ def stock_deep_dive():
                 {"Metric": "FCF Conversion %", "Value": row["FCF Conversion %"], "Why It Matters": "How well operating cash becomes free cash."},
             ])
             st.dataframe(val_df, width="stretch")
-            st.info(f"Fair value estimate: {money(row['Fair Value'])}. Margin of safety: {row['Margin of Safety %']}%.")
+            lo, hi = row.get("Fair Value Low"), row.get("Fair Value High")
+            central = safe_float(row.get("Fair Value"))
+            if lo and hi and central:
+                spread = (hi - lo) / central if central else 0
+                if spread <= 0.35:
+                    conf = "🟢 High agreement — the methods broadly concur, so this fair-value zone is fairly reliable."
+                elif spread <= 0.7:
+                    conf = "🟡 Moderate disagreement — treat fair value as a wide zone, not a target."
+                else:
+                    conf = "🔴 Low confidence — the methods disagree sharply, so the fair-value estimate is unreliable for this stock. Lean on the individual factor scores instead."
+                st.info(
+                    f"**Fair value range: {money(lo)} – {money(hi)}**  (central estimate {money(central)}).  "
+                    f"Current price: {money(row['Price'])} · Margin of safety: {row['Margin of Safety %']}%."
+                )
+                st.caption(f"{conf}")
+                st.caption(f"How each method votes → {row.get('Valuation Methods', 'N/A')}")
+            else:
+                st.info(f"Fair value estimate: {money(row['Fair Value'])}. Margin of safety: {row['Margin of Safety %']}%.")
         with tab3:
             st.subheader("Quality + Health")
             health_df = pd.DataFrame([
