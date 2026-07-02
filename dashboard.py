@@ -496,6 +496,39 @@ def enhance_research_columns(df):
     return df
 
 
+# Which absolute factors get a "within-sector" companion score.
+SECTOR_RELATIVE_FACTORS = {
+    "Overall Quant Score": "Overall vs Sector",
+    "Valuation Score": "Valuation vs Sector",
+    "Quality Score": "Quality vs Sector",
+    "Growth Score": "Growth vs Sector",
+    "Health Score": "Health vs Sector",
+    "Momentum Score": "Momentum vs Sector",
+}
+
+
+def add_sector_relative_scores(df):
+    """Add 0-100 percentile ranks computed WITHIN each stock's sector.
+
+    Comparing a bank's raw valuation to a software company's is misleading — banks
+    structurally trade cheap, software structurally trades rich. A percentile *among
+    sector peers* answers the more useful question: is this the cheapest/best-quality
+    name relative to companies it actually competes with? Sectors with fewer than 3
+    scanned names are left blank, since a percentile among 1-2 peers isn't meaningful.
+    (This gets more powerful the more of the S&P 500 you scan.)"""
+    if df is None or df.empty or "Sector" not in df.columns:
+        return df
+    df = df.copy()
+    peer_counts = df.groupby("Sector")["Ticker"].transform("count")
+    df["Sector Peers"] = peer_counts.astype("Int64")
+    for src, dest in SECTOR_RELATIVE_FACTORS.items():
+        if src in df.columns:
+            ranks = (df.groupby("Sector")[src].rank(pct=True) * 100).round(0)
+            ranks = ranks.where(peer_counts >= 3, other=pd.NA)
+            df[dest] = ranks.astype("Int64")
+    return df
+
+
 
 def normalize_scores_df(df):
     if df is None or df.empty:
@@ -2242,6 +2275,7 @@ def opportunity_engine():
             return
         df = enhance_research_columns(df)
         df = add_score_change(df)
+        df = add_sector_relative_scores(df)
         st.subheader("Best Overall Research Priorities")
         st.dataframe(df.sort_values("Research Priority", ascending=False).head(25), width="stretch")
 
@@ -2263,6 +2297,28 @@ def opportunity_engine():
             st.dataframe(df.sort_values("Expected Return Score", ascending=False).head(15), width="stretch")
             st.subheader("Best Relative Strength")
             st.dataframe(df.sort_values("Relative Strength Score", ascending=False).head(15), width="stretch")
+        st.divider()
+        st.subheader("Sector-Relative Leaders")
+        st.caption(
+            "These rank each stock **against its own sector**, not the whole market. A bank "
+            "with a mediocre absolute valuation score can still be the cheapest bank — that's "
+            "what these percentiles surface. Higher = better vs peers. Sectors with fewer than "
+            "3 scanned names are blank, so this gets sharper the more of the S&P 500 you scan."
+        )
+        rel_options = [d for d in SECTOR_RELATIVE_FACTORS.values() if d in df.columns]
+        if not rel_options:
+            st.info("Scan more names (aim for a broad scan) to unlock sector-relative rankings.")
+        else:
+            rel_choice = st.selectbox("Rank within sector by", rel_options)
+            rel_cols = ["Ticker", "Company", "Sector", "Sector Peers", rel_choice]
+            # show the matching absolute score next to the relative one for context
+            abs_for_rel = {v: k for k, v in SECTOR_RELATIVE_FACTORS.items()}
+            abs_col = abs_for_rel.get(rel_choice)
+            if abs_col and abs_col in df.columns:
+                rel_cols.append(abs_col)
+            rel_df = df.dropna(subset=[rel_choice]).sort_values(rel_choice, ascending=False)
+            st.dataframe(rel_df[[c for c in rel_cols if c in rel_df.columns]].head(20), width="stretch")
+
         st.divider()
         st.subheader("Filter Quant Database")
         score_type = st.selectbox("Rank by", [
