@@ -1,0 +1,42 @@
+name: Weekly Quant Scan
+
+# Runs the quant scan on a schedule and commits fresh scores + a dated history snapshot
+# back to the repo. Streamlit Cloud auto-redeploys on the new commit, so the live app
+# always shows current data — and the honest backtest gains a new point-in-time snapshot
+# every week, building a real track record automatically.
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"     # Every Monday 13:00 UTC (~9am ET / 6am PT)
+  workflow_dispatch: {}        # Also lets you run it manually from the Actions tab
+
+permissions:
+  contents: write              # Needed to commit the updated CSVs back to the repo
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run quant scan
+        run: python run_scan.py
+
+      - name: Commit updated scores
+        run: |
+          git config user.name "quant-scan-bot"
+          git config user.email "actions@github.com"
+          git add sp500_quant_scores.csv sp500_quant_score_history.csv
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Automated quant scan ($(date -u +%Y-%m-%d))"
+            git push
+          fi
