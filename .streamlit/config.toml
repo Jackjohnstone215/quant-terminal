@@ -1,0 +1,12 @@
+# Custom dark "quant terminal" theme.
+# Streamlit reads this automatically when the app runs from this folder.
+[theme]
+base = "dark"
+primaryColor = "#00C39A"            # teal-green accent (buttons, highlights, sliders)
+backgroundColor = "#0B0E14"         # near-black navy main canvas
+secondaryBackgroundColor = "#151A23" # sidebar + cards
+textColor = "#E6EAF1"
+font = "sans serif"
+
+[server]
+headless = true

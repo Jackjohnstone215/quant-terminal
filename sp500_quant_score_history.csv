@@ -1,0 +1,39 @@
+Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity Score,Position Trade Score,Health Score,Expected Return Score,Price,Fair Value,Upside %,Tier,Labels
+2026-06-05,MSFT,Microsoft Corporation,Technology,53.7,63.7,51.4,35.0,62.5,53.8,416.67,406.74,-2.4,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,AAPL,Apple Inc.,Technology,61.7,67.1,44.3,73.3,65.5,60.0,307.34,212.65,-30.8,Tier 3 — Watchlist Only,General Watchlist
+2026-06-05,NVDA,NVIDIA Corporation,Technology,67.2,74.4,64.8,56.5,72.3,65.3,205.1,261.1,27.3,Tier 3 — Watchlist Only,General Watchlist
+2026-06-05,META,"Meta Platforms, Inc.",Communication Services,61.2,71.5,65.2,34.0,69.8,61.0,593.0,728.11,22.8,Tier 3 — Watchlist Only,General Watchlist
+2026-06-05,GOOGL,Alphabet Inc.,Communication Services,62.7,68.7,48.3,70.3,65.3,61.3,368.53,304.45,-17.4,Tier 3 — Watchlist Only,General Watchlist
+2026-06-05,AMZN,"Amazon.com, Inc.",Consumer Cyclical,42.2,44.9,35.1,49.2,39.1,42.1,246.03,156.82,-36.3,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,COST,Costco Wholesale Corporation,Consumer Defensive,35.4,40.8,22.2,46.0,31.9,36.1,971.87,480.38,-50.6,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,AVGO,Broadcom Inc.,Technology,65.0,74.2,56.5,57.7,72.4,62.6,385.73,403.78,4.7,Tier 3 — Watchlist Only,General Watchlist
+2026-06-05,V,Visa Inc.,Financial Services,65.3,75.1,61.8,47.8,74.7,65.4,323.57,342.96,6.0,Tier 3 — Watchlist Only,General Watchlist
+2026-06-05,MA,Mastercard Incorporated,Financial Services,58.7,67.8,58.9,37.4,68.7,58.8,491.08,525.31,7.0,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,LLY,Eli Lilly and Company,Healthcare,59.3,63.9,44.2,72.2,59.2,57.8,1131.42,949.41,-16.1,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,UNH,UnitedHealth Group Incorporated,Healthcare,39.6,30.6,35.2,65.5,29.8,40.2,399.47,298.16,-25.4,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,HD,"Home Depot, Inc. (The)",Consumer Cyclical,29.3,29.2,32.4,24.5,29.5,30.9,310.78,229.39,-26.2,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,PG,Procter & Gamble Company (The),Consumer Defensive,48.8,52.8,44.4,44.1,53.7,50.0,146.54,115.56,-21.1,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,ADBE,Adobe Inc.,Technology,70.0,75.4,84.1,35.6,81.8,69.9,251.44,497.59,97.9,Tier 3 — Watchlist Only,"Undervalued Opportunity, Recovery Candidate, Healthy Business"
+2026-06-05,CRM,"Salesforce, Inc.",Technology,59.4,64.7,74.9,27.5,65.2,59.8,185.66,267.17,43.9,Tier 4 — Low Priority / Avoid,Recovery Candidate
+2026-06-05,NFLX,"Netflix, Inc.",Communication Services,65.9,77.3,70.4,33.0,79.7,65.0,82.18,95.42,16.1,Tier 3 — Watchlist Only,General Watchlist
+2026-06-05,NOW,"ServiceNow, Inc.",Technology,49.4,57.4,48.5,32.6,57.7,49.1,112.45,103.33,-8.1,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,AMD,"Advanced Micro Devices, Inc.",Technology,55.9,59.3,40.8,72.1,54.7,52.7,466.38,292.97,-37.2,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,QCOM,QUALCOMM Incorporated,Technology,64.6,64.9,59.1,69.7,67.4,62.9,215.94,215.36,-0.3,Tier 3 — Watchlist Only,General Watchlist
+2026-06-05,PYPL,"PayPal Holdings, Inc.",Financial Services,54.3,53.5,73.5,27.2,59.1,55.6,41.29,71.06,72.1,Tier 4 — Low Priority / Avoid,Recovery Candidate
+2026-06-05,DIS,Walt Disney Company (The),Communication Services,29.8,28.9,32.0,29.0,28.0,31.6,99.71,71.49,-28.3,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,NKE,"Nike, Inc.",Consumer Cyclical,27.8,28.7,28.9,22.0,31.7,28.7,42.98,30.73,-28.5,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,SBUX,Starbucks Corporation,Consumer Cyclical,28.4,26.4,23.0,45.3,18.4,29.5,95.29,74.7,-21.6,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,INTC,Intel Corporation,Technology,34.9,29.4,26.4,61.0,25.9,33.8,99.17,58.72,-40.8,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,TGT,Target Corporation,Consumer Defensive,37.4,28.1,37.6,58.8,26.3,38.5,122.57,92.95,-24.2,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,CVS,CVS Health Corporation,Healthcare,42.4,29.3,43.7,75.2,21.4,44.2,95.93,168.55,75.7,Tier 4 — Low Priority / Avoid,Position Trade Candidate
+2026-06-05,WBD,"Warner Bros. Discovery, Inc. - ",Communication Services,43.5,39.5,46.7,49.5,38.3,43.6,26.24,22.64,-13.7,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,BA,Boeing Company (The),Industrials,28.8,29.7,21.3,38.5,26.8,28.9,215.45,91.72,-57.4,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,PFE,"Pfizer, Inc.",Healthcare,56.1,56.6,59.6,47.8,59.4,57.5,26.04,28.05,7.7,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,F,Ford Motor Company,Consumer Cyclical,28.8,20.2,23.3,60.9,12.3,28.6,14.9,12.75,-14.4,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,GM,General Motors Company,Consumer Cyclical,43.9,31.3,57.3,54.4,31.7,45.8,82.11,146.5,78.4,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,SHOP,Shopify Inc.,Technology,38.0,48.9,31.3,24.7,46.4,36.3,109.54,65.92,-39.8,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,SQ,SQ,Unknown,48.9,50.1,49.8,45.0,50.0,49.4,,,,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,ROKU,"Roku, Inc.",Communication Services,50.0,49.9,40.3,65.6,46.9,48.2,122.26,100.09,-18.1,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,ZM,"Zoom Communications, Inc.",Technology,74.2,80.7,70.7,62.4,83.3,73.5,101.62,108.37,6.6,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business"
+2026-06-05,PARA,PARA,Unknown,48.9,50.1,49.8,45.0,50.0,49.4,,,,Tier 4 — Low Priority / Avoid,General Watchlist
+2026-06-05,BABA,Alibaba Group Holding Limited,Consumer Cyclical,37.0,34.7,47.3,31.7,30.1,39.5,121.06,182.46,50.7,Tier 4 — Low Priority / Avoid,General Watchlist

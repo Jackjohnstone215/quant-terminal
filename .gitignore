@@ -1,0 +1,15 @@
+# --- Secrets (NEVER commit these) ---
+.env
+.streamlit/secrets.toml
+
+# --- Personal data (keep your real holdings off a public repo) ---
+portfolio_manager_ai.csv
+
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
