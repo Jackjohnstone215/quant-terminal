@@ -851,11 +851,18 @@ def fetch_fmp_fundamentals(ticker):
         "ebitda": (ebitda_margin * total_revenue) if (ebitda_margin is not None and total_revenue) else None,
         "revenueGrowth": safe_float(growth.get("revenueGrowth")),
         "earningsGrowth": safe_float(growth.get("netIncomeGrowth")),
-        # Authoritative values we prefer over the derived proxies:
+        # Authoritative values we prefer over our derived proxies (avoids synthesis error):
         "_source": "FMP (SEC filings)",
         "_fmp_roic": safe_float(km.get("returnOnInvestedCapitalTTM")),
         "_fmp_fcf_yield": safe_float(km.get("freeCashFlowYieldTTM")),
         "_fmp_ev_to_fcf": safe_float(km.get("evToFreeCashFlowTTM")),
+        "_fmp_net_debt_to_ebitda": safe_float(km.get("netDebtToEBITDATTM")),
+        "_fmp_ocf_margin": safe_float(ratios.get("operatingCashFlowSalesRatioTTM")),
+        "_fmp_fcf_conversion": safe_float(ratios.get("freeCashFlowOperatingCashFlowRatioTTM")),
+        "_fmp_fcf_margin": (
+            safe_float(ratios.get("freeCashFlowPerShareTTM")) / safe_float(ratios.get("revenuePerShareTTM"))
+            if safe_float(ratios.get("revenuePerShareTTM")) else None
+        ),
     }
     return info
 
@@ -868,11 +875,19 @@ def fetch_ticker_bundle(ticker):
     If neither price nor fundamentals can be had, raises DataUnavailable so the caller
     SKIPS the ticker instead of inventing neutral 50-scores."""
     if fmp_available():
-        info = fetch_fmp_fundamentals(ticker)   # raises DataUnavailable if not found
-        hist = _yf_history(ticker)
-        return info, hist
+        try:
+            info = fetch_fmp_fundamentals(ticker)   # raises DataUnavailable if not found
+            # If FMP is rate-limited mid-request (free tier = 250 calls/day), the profile
+            # can arrive but ratios/metrics come back empty. Rather than score on a sparse
+            # record, fall through to Yahoo so we still produce an honest number.
+            core = [info.get("trailingPE"), info.get("returnOnEquity"),
+                    info.get("profitMargins"), info.get("debtToEquity")]
+            if any(v is not None for v in core):
+                return info, _yf_history(ticker)
+        except DataUnavailable:
+            pass  # FMP has nothing usable — try Yahoo before giving up
 
-    # ---- Yahoo-only path ----
+    # ---- Yahoo path (fallback, or when no FMP key) ----
     last_err = None
     info, hist = {}, pd.DataFrame()
     for attempt in range(3):
@@ -975,12 +990,23 @@ def get_quant_score(ticker):
         roic_proxy = estimated_operating_income / invested_capital_proxy
 
     # When FMP provides authoritative figures, prefer them over our derived proxies.
+    # (These come straight from filings, so they avoid the per-share x shares synthesis
+    # error — e.g. net-debt/EBITDA was flipping sign because per-share debt undercounts
+    # leases/other debt. Using the direct value fixes the Financial Strength score.)
     if info.get("_fmp_roic") is not None:
         roic_proxy = safe_float(info.get("_fmp_roic"))
     if info.get("_fmp_fcf_yield") is not None:
         fcf_yield = safe_float(info.get("_fmp_fcf_yield"))
     if info.get("_fmp_ev_to_fcf") is not None:
         ev_to_fcf = safe_float(info.get("_fmp_ev_to_fcf"))
+    if info.get("_fmp_net_debt_to_ebitda") is not None:
+        net_debt_to_ebitda = safe_float(info.get("_fmp_net_debt_to_ebitda"))
+    if info.get("_fmp_ocf_margin") is not None:
+        ocf_margin = safe_float(info.get("_fmp_ocf_margin"))
+    if info.get("_fmp_fcf_conversion") is not None:
+        fcf_conversion = safe_float(info.get("_fmp_fcf_conversion"))
+    if info.get("_fmp_fcf_margin") is not None:
+        fcf_margin = safe_float(info.get("_fmp_fcf_margin"))
 
     if len(hist) > 252:
         current_price = safe_float(hist["Close"].iloc[-1], price)
