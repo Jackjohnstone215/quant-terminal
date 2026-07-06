@@ -2227,12 +2227,22 @@ def save_portfolio(df):
 # ============================================================
 
 def load_watchlist():
+    # 1) Local file (persists on your PC and within a cloud session)
     if WATCHLIST_FILE.exists():
         try:
             df = pd.read_csv(WATCHLIST_FILE)
-            return [str(t).upper().strip() for t in df["Ticker"].dropna().tolist() if str(t).strip()]
+            fl = [str(t).upper().strip() for t in df["Ticker"].dropna().tolist() if str(t).strip()]
+            if fl:
+                return fl
         except Exception:
-            return []
+            pass
+    # 2) URL query param — survives Streamlit Cloud reboots if you bookmark the page
+    try:
+        wl = st.query_params.get("wl")
+        if wl:
+            return [t.strip().upper() for t in wl.split(",") if t.strip()]
+    except Exception:
+        pass
     return []
 
 
@@ -2242,7 +2252,15 @@ def save_watchlist(tickers):
         t = str(t).upper().strip()
         if t and t not in clean:
             clean.append(t)
-    pd.DataFrame({"Ticker": clean}).to_csv(WATCHLIST_FILE, index=False)
+    try:
+        pd.DataFrame({"Ticker": clean}).to_csv(WATCHLIST_FILE, index=False)
+    except Exception:
+        pass
+    # Mirror into the URL so a bookmark preserves the list across reboots/devices.
+    try:
+        st.query_params["wl"] = ",".join(clean)
+    except Exception:
+        pass
     return clean
 
 
@@ -2940,6 +2958,15 @@ def stock_deep_dive():
         c6.metric("Upside", f"{row['Upside %']}%" if row["Upside %"] is not None else "N/A")
         c7.metric("Research Time", row["Research Time"])
         c8.metric("Biggest Risk", row["Biggest Risk"])
+        try:
+            pdf_bytes = build_stock_pdf(row, verdict, bull, bear)
+            st.download_button(
+                "📄 Download 1-page PDF report", data=pdf_bytes,
+                file_name=f"{row['Ticker']}_research_{row.get('Scan Date','')}.pdf",
+                mime="application/pdf",
+            )
+        except Exception as e:
+            st.caption(f"(PDF export unavailable: {str(e)[:80]})")
         if len(hist):
             st.plotly_chart(
                 price_with_fair_value(hist, row.get("Fair Value Low"), row.get("Fair Value High"), row.get("Fair Value")),
@@ -3310,6 +3337,13 @@ def watchlist_page():
             if remove and st.button("🗑️ Remove selected"):
                 tickers = save_watchlist([t for t in tickers if t not in remove])
                 st.rerun()
+        if tickers:
+            st.caption("💾 Your list is saved to this page's URL — **bookmark this page** to keep it across reboots and devices. Backup code below:")
+            st.code(",".join(tickers), language=None)
+            restore = st.text_input("Restore from a backup code", "", key="wl_restore")
+            if restore and st.button("Restore"):
+                save_watchlist([x.strip().upper() for x in restore.replace(";", ",").split(",") if x.strip()])
+                st.rerun()
 
     if not tickers:
         st.info("Your watchlist is empty. Add a few tickers above to start tracking them.")
@@ -3453,6 +3487,77 @@ def etf_explorer_page():
             cdf = pd.DataFrame(rows)[[c for c in cmp_cols if c in rows[0]]]
             st.dataframe(cdf, width="stretch")
             st.caption("Lower expense ratio and drawdown are better; compare returns *alongside* volatility, not alone.")
+
+
+def _latin1(s):
+    """fpdf core fonts are latin-1 only; strip characters they can't encode."""
+    return str(s).replace("—", "-").replace("–", "-").replace("’", "'").replace("“", '"').replace("”", '"').encode("latin-1", "replace").decode("latin-1")
+
+
+def build_stock_pdf(row, verdict, bull, bear):
+    """One-page research summary PDF (bytes). Pure-Python (fpdf2), works on the cloud."""
+    from fpdf import FPDF
+
+    pdf = FPDF(format="letter")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 10, _latin1(f"{row.get('Ticker','')} - {row.get('Company','')}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(110)
+    pdf.cell(0, 5, _latin1(f"{row.get('Sector','')} | {row.get('Industry','')} | Data: {row.get('Data Source','Yahoo Finance')} | As of {row.get('Scan Date','')}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(0)
+    pdf.ln(3)
+
+    def line(label, value, bold_val=False):
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(60, 6, _latin1(label))
+        pdf.set_font("Helvetica", "B" if bold_val else "", 10)
+        pdf.cell(0, 6, _latin1(value), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 7, "Verdict", new_x="LMARGIN", new_y="NEXT")
+    line("Research action:", verdict, True)
+    line("Overall Quant Score:", f"{row.get('Overall Quant Score','')}/100 ({row.get('Overall Grade','')})")
+    line("Tier:", str(row.get("Tier", "")))
+    line("Price:", money(row.get("Price")))
+    fv_l, fv_h = row.get("Fair Value Low"), row.get("Fair Value High")
+    fv_txt = f"{money(row.get('Fair Value'))}  (range {money(fv_l)} - {money(fv_h)})" if fv_l and fv_h else money(row.get("Fair Value"))
+    line("Fair value:", fv_txt)
+    line("Upside to fair value:", f"{row.get('Upside %','')}%")
+    line("Suggested hold:", str(row.get("Suggested Hold", "")))
+    line("Biggest risk:", str(row.get("Biggest Risk", "")))
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 7, "Master Scores", new_x="LMARGIN", new_y="NEXT")
+    for lbl, key in [("Investment", "Investment Score"), ("Opportunity", "Opportunity Score"),
+                     ("Position Trade", "Position Trade Score"), ("Health", "Health Score"),
+                     ("Quality", "Quality Score"), ("Valuation", "Valuation Score"),
+                     ("Growth", "Growth Score"), ("Momentum", "Momentum Score"),
+                     ("Risk Control", "Risk Score"), ("Conviction", "Conviction Score")]:
+        line(f"{lbl}:", f"{row.get(key,'')}/100")
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 7, "Bull case", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    for b in bull:
+        pdf.multi_cell(0, 5, _latin1(f"- {b}"))
+    pdf.ln(1)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 7, "Bear case", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    for b in bear:
+        pdf.multi_cell(0, 5, _latin1(f"- {b}"))
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(120)
+    pdf.multi_cell(0, 4, _latin1("Research aid only - not financial advice. Generated by Mastermind Quant Terminal."))
+
+    return bytes(pdf.output())
 
 
 def compare_page():
