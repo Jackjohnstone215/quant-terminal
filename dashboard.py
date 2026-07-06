@@ -189,6 +189,21 @@ def valuation_quality_scatter(df):
     return _style_fig(fig, height=520)
 
 
+def etf_sector_chart(weights):
+    """Horizontal bar chart of an ETF's sector weightings (dict of name->fraction)."""
+    if not weights:
+        return None
+    items = sorted(((k.replace("_", " ").title(), v * 100) for k, v in weights.items() if v),
+                   key=lambda x: x[1])
+    fig = go.Figure(go.Bar(
+        x=[v for _, v in items], y=[k for k, _ in items], orientation="h",
+        marker_color=ACCENT, hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
+    ))
+    fig.update_xaxes(gridcolor=CHART_GRID, title="Weight %")
+    fig.update_yaxes(gridcolor=CHART_GRID)
+    return _style_fig(fig, height=360)
+
+
 def price_with_fair_value(hist, fv_low, fv_high, fv_central):
     """Price history line with the fair-value range shaded across it — so you can see at a
     glance whether the stock is trading below, inside, or above its estimated fair value."""
@@ -938,6 +953,84 @@ def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth
 class DataUnavailable(Exception):
     """Raised when a ticker has no usable market data (delisted, renamed, or invalid)."""
     pass
+
+
+def _norm_pct(v):
+    """yfinance mixes fractions (0.25) and percents (20.3) for returns/yields. Normalize
+    to percent: treat |v|<3 as a fraction and scale up, otherwise assume it's already %."""
+    v = safe_float(v)
+    if v is None:
+        return None
+    return round(v * 100, 2) if abs(v) < 3 else round(v, 2)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def analyze_etf(ticker):
+    """Fetch ETF characteristics from Yahoo (free): cost, size, yield, returns, risk,
+    sector mix, and top holdings. Works for any fund/ETF ticker."""
+    t = yf.Ticker(ticker)
+    info = t.info or {}
+    hist = _yf_history(ticker, period="2y")   # 2y so the 1-year return is always available
+
+    price = safe_float(info.get("navPrice"))
+    if price is None and len(hist):
+        price = safe_float(hist["Close"].iloc[-1])
+
+    def ret(days):
+        if len(hist) > days:
+            base = safe_float(hist["Close"].iloc[-days])
+            cur = safe_float(hist["Close"].iloc[-1])
+            if base and cur:
+                return round((cur / base - 1) * 100, 1)
+        return None
+
+    vol = mdd = None
+    if len(hist) > 30:
+        window = hist["Close"].tail(252)   # risk over the last year
+        dr = window.pct_change().dropna()
+        vol = round(safe_float(dr.std() * math.sqrt(252), 0) * 100, 1)
+        rh = window.cummax()
+        mdd = round(safe_float((window / rh - 1).min(), 0) * 100, 1)
+
+    sectors, holdings, family = {}, None, None
+    category = info.get("category")
+    try:
+        fd = t.funds_data
+        sectors = fd.sector_weightings or {}
+        holdings = fd.top_holdings
+        ov = fd.fund_overview or {}
+        family = ov.get("family")
+        category = ov.get("categoryName") or category
+    except Exception:
+        pass
+
+    expense = safe_float(info.get("annualReportExpenseRatio")) or safe_float(info.get("netExpenseRatio"))
+    # yfinance returns expense either as a fraction (0.000945) or already as a percent
+    # (0.0945). Values below ~0.02 are fractions and need scaling; larger ones are already %.
+    if expense is not None:
+        expense_pct = round(expense * 100 if expense < 0.02 else expense, 3)
+    else:
+        expense_pct = None
+    return {
+        "Ticker": ticker.upper(),
+        "Name": info.get("longName", ticker),
+        "Is ETF": info.get("quoteType") == "ETF",
+        "Category": category,
+        "Family": family,
+        "Price": round(price, 2) if price else None,
+        "AUM": safe_float(info.get("totalAssets")),
+        "Yield %": _norm_pct(info.get("yield")),
+        "Expense Ratio %": expense_pct,
+        "Beta (3y)": safe_float(info.get("beta3Year")),
+        "YTD %": _norm_pct(info.get("ytdReturn")),
+        "1M %": ret(21), "3M %": ret(63), "6M %": ret(126), "1Y %": ret(252),
+        "3Y Ann %": _norm_pct(info.get("threeYearAverageReturn")),
+        "5Y Ann %": _norm_pct(info.get("fiveYearAverageReturn")),
+        "Volatility %": vol,
+        "Max Drawdown %": mdd,
+        "Sector Weightings": sectors,
+        "Top Holdings": holdings,
+    }
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
@@ -3284,6 +3377,84 @@ def watchlist_page():
         st.caption("No upcoming earnings dates available for these tickers right now.")
 
 
+def etf_explorer_page():
+    st.title("ETF Explorer")
+    st.caption("Analyze funds the right way — cost, size, yield, returns, risk, sector mix, and holdings. Data: Yahoo Finance (free).")
+
+    tab_one, tab_cmp = st.tabs(["Single ETF", "Compare ETFs"])
+
+    with tab_one:
+        ticker = st.text_input("ETF ticker", "SPY").upper().strip()
+        if st.button("Analyze ETF", type="primary"):
+            with st.spinner("Loading fund data..."):
+                e = analyze_etf(ticker)
+            if not e.get("Price"):
+                st.error(f"Couldn't load data for {ticker}. Check the symbol.")
+                return
+            if not e.get("Is ETF"):
+                st.warning(f"{ticker} doesn't look like an ETF/fund — the equity Deep Dive page is a better fit for it.")
+
+            st.subheader(f"{e['Ticker']} — {e['Name']}")
+            st.caption(f"{e.get('Category') or 'Fund'} · {e.get('Family') or ''}")
+            aum = e.get("AUM")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("AUM", f"${aum/1e9:.1f}B" if aum else "N/A")
+            c2.metric("Expense Ratio", f"{e['Expense Ratio %']}%" if e["Expense Ratio %"] is not None else "N/A")
+            c3.metric("Yield", f"{e['Yield %']}%" if e["Yield %"] is not None else "N/A")
+            c4.metric("Beta (3y)", e["Beta (3y)"] if e["Beta (3y)"] is not None else "N/A")
+
+            c5, c6, c7, c8 = st.columns(4)
+            c5.metric("YTD", f"{e['YTD %']}%" if e["YTD %"] is not None else "N/A")
+            c6.metric("1Y", f"{e['1Y %']}%" if e["1Y %"] is not None else "N/A")
+            c7.metric("3Y (ann.)", f"{e['3Y Ann %']}%" if e["3Y Ann %"] is not None else "N/A")
+            c8.metric("5Y (ann.)", f"{e['5Y Ann %']}%" if e["5Y Ann %"] is not None else "N/A")
+
+            c9, c10 = st.columns(2)
+            c9.metric("Volatility (1y)", f"{e['Volatility %']}%" if e["Volatility %"] is not None else "N/A")
+            c10.metric("Max Drawdown (1y)", f"{e['Max Drawdown %']}%" if e["Max Drawdown %"] is not None else "N/A")
+
+            if e["Expense Ratio %"] is not None:
+                er = e["Expense Ratio %"]
+                note = ("🟢 Very low cost" if er <= 0.10 else "🟡 Moderate cost" if er <= 0.5 else "🔴 Expensive — costs compound over time")
+                st.caption(f"Cost check: {note} ({er}%/yr).")
+
+            col_a, col_b = st.columns([1, 1])
+            with col_a:
+                st.markdown("**Sector weightings**")
+                fig = etf_sector_chart(e.get("Sector Weightings"))
+                if fig:
+                    st.plotly_chart(fig, width="stretch")
+                else:
+                    st.caption("Sector breakdown not available for this fund.")
+            with col_b:
+                st.markdown("**Top holdings**")
+                th = e.get("Top Holdings")
+                if th is not None and hasattr(th, "empty") and not th.empty:
+                    disp = th.copy()
+                    if "Holding Percent" in disp.columns:
+                        disp["Weight %"] = (disp["Holding Percent"] * 100).round(2)
+                        disp = disp.drop(columns=["Holding Percent"])
+                    st.dataframe(disp, width="stretch")
+                else:
+                    st.caption("Holdings not available for this fund.")
+
+    with tab_cmp:
+        raw = st.text_input("Compare ETFs (comma-separated)", "SPY, QQQ, VTI, SCHD")
+        etfs = [x.strip().upper() for x in raw.replace(";", ",").split(",") if x.strip()][:6]
+        if st.button("Compare", type="primary", key="etf_cmp"):
+            with st.spinner("Loading funds..."):
+                rows = [analyze_etf(t) for t in etfs]
+            rows = [r for r in rows if r.get("Price")]
+            if not rows:
+                st.warning("Couldn't load those ETFs.")
+                return
+            cmp_cols = ["Ticker", "Name", "Category", "Expense Ratio %", "Yield %",
+                        "YTD %", "1Y %", "3Y Ann %", "5Y Ann %", "Beta (3y)", "Volatility %", "Max Drawdown %"]
+            cdf = pd.DataFrame(rows)[[c for c in cmp_cols if c in rows[0]]]
+            st.dataframe(cdf, width="stretch")
+            st.caption("Lower expense ratio and drawdown are better; compare returns *alongside* volatility, not alone.")
+
+
 def compare_page():
     st.title("Compare Stocks")
     st.caption("Put 2–4 stocks head-to-head — factor shapes overlaid, key metrics side by side.")
@@ -3325,7 +3496,7 @@ def main():
     app_header()
     page = st.sidebar.radio(
         "Choose Page",
-        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "Backtesting Lab", "Learning Center"]
+        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
@@ -3346,6 +3517,8 @@ def main():
         opportunity_engine()
     elif page == "Quant Stock Deep Dive":
         stock_deep_dive()
+    elif page == "ETF Explorer":
+        etf_explorer_page()
     elif page == "Backtesting Lab":
         backtesting_page()
     else:
