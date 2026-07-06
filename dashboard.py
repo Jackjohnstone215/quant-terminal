@@ -851,6 +851,90 @@ def get_market_news(hours_back=10):
     return sorted(unique, key=lambda x: (x["Importance"], x["Published"]), reverse=True)
 
 
+def _dcf_fair_value(fcf_ps, growth_rate, risk_score, years=5, g_term=0.025):
+    """Simple 2-stage discounted-cash-flow value per share. Grows current FCF/share for
+    `years` at a capped stage-1 rate, then a perpetuity at g_term, discounted at a rate
+    that rises with risk. Returns None for companies with no positive free cash flow."""
+    fcf_ps = safe_float(fcf_ps)
+    if fcf_ps is None or fcf_ps <= 0:
+        return None
+    g1 = min(max(safe_float(growth_rate, 0.04) or 0.04, 0.0), 0.13)   # cap stage-1 growth at 13%
+    r = 0.09 if safe_float(risk_score, 50) >= 45 else 0.11            # riskier -> higher discount
+    if r <= g_term:
+        return None
+    pv, cf = 0.0, fcf_ps
+    for yr in range(1, years + 1):
+        cf *= (1 + g1)
+        pv += cf / ((1 + r) ** yr)
+    terminal = cf * (1 + g_term) / (r - g_term)
+    pv += terminal / ((1 + r) ** years)
+    return pv
+
+
+def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth_score,
+                        cash_flow_score, risk_score, growth_rate, high_52, low_52):
+    """Blend several valuation methods into an honest fair-value range.
+
+    Each method is capped to a sane band around the current price (so a low-PEG denominator
+    can't explode the estimate), then the CENTRAL value is the median (robust to outliers)
+    and the range is the min/max of the capped methods."""
+    price = safe_float(price)
+    if not price or price <= 0:
+        return {"central": None, "low": None, "high": None, "methods": []}
+    methods = []
+
+    pe = safe_float(pe)
+    if pe and pe > 0:
+        eps = price / pe
+        fair_pe = 18
+        if quality_score >= 80 and growth_score >= 75:
+            fair_pe = 30
+        elif quality_score >= 70 and growth_score >= 60:
+            fair_pe = 24
+        elif quality_score < 45:
+            fair_pe = 14
+        methods.append(("P/E", eps * fair_pe))
+
+    ev_to_fcf = safe_float(ev_to_fcf)
+    if ev_to_fcf and ev_to_fcf > 0:
+        fair_ev_fcf = 20
+        if quality_score >= 80 and cash_flow_score >= 75:
+            fair_ev_fcf = 28
+        elif quality_score < 50:
+            fair_ev_fcf = 14
+        methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
+
+    dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score)
+    if dcf:
+        methods.append(("DCF", dcf))
+
+    peg = safe_float(peg)
+    if peg and peg > 0:
+        fair_peg = 1.4
+        if quality_score >= 80:
+            fair_peg = 2.0
+        elif quality_score >= 70:
+            fair_peg = 1.7
+        if growth_score < 45:
+            fair_peg = 1.1
+        methods.append(("PEG", price * (fair_peg / peg)))
+
+    high_52, low_52 = safe_float(high_52), safe_float(low_52)
+    if high_52 and low_52:
+        midpoint = (high_52 + low_52) / 2
+        methods.append(("52-week midpoint", midpoint * (1 + (quality_score - 50) / 250)))
+
+    if not methods:
+        return {"central": price, "low": price, "high": price, "methods": []}
+
+    lo_cap, hi_cap = 0.4 * price, 2.5 * price
+    capped = [(n, min(max(v, lo_cap), hi_cap)) for n, v in methods]
+    vals = sorted(v for _, v in capped)
+    m = len(vals)
+    central = vals[m // 2] if m % 2 else (vals[m // 2 - 1] + vals[m // 2]) / 2
+    return {"central": central, "low": min(vals), "high": max(vals), "methods": capped}
+
+
 class DataUnavailable(Exception):
     """Raised when a ticker has no usable market data (delisted, renamed, or invalid)."""
     pass
@@ -1160,6 +1244,7 @@ def get_quant_score(ticker):
         relative_strength_6m = 0
         relative_strength_12m = 0
         volume_ratio = 1
+        high_52 = low_52 = None
 
     quality_score = (
         safe_score(roic_proxy, 0.02, 0.18) * 0.28 +
@@ -1230,61 +1315,18 @@ def get_quant_score(ticker):
         safe_score(revenue_growth, -0.03, 0.25) * 0.10
     )
 
-    # Each independent method casts a "vote" on fair value. We keep them named so we can
-    # show a HONEST RANGE (how much the methods disagree) instead of one false-precision number.
-    fv_methods = []
-    if forward_pe and price:
-        fair_pe = 18
-        if quality_score >= 80 and growth_score >= 75:
-            fair_pe = 30
-        elif quality_score >= 70 and growth_score >= 60:
-            fair_pe = 24
-        elif quality_score < 45:
-            fair_pe = 14
-        eps_forward = price / forward_pe if forward_pe else None
-        if eps_forward:
-            fv_methods.append(("Forward P/E", eps_forward * fair_pe))
-
-    if peg and price:
-        fair_peg = 1.4
-        if quality_score >= 80:
-            fair_peg = 2.0
-        elif quality_score >= 70:
-            fair_peg = 1.7
-        if growth_score < 45:
-            fair_peg = 1.1
-        fv_methods.append(("PEG", price * (fair_peg / peg)))
-
-    if ev_to_fcf and price:
-        fair_ev_fcf = 20
-        if quality_score >= 80 and cash_flow_score >= 75:
-            fair_ev_fcf = 28
-        elif quality_score < 50:
-            fair_ev_fcf = 14
-        fv_methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
-
-    if price and len(hist) > 252:
-        high_52 = safe_float(hist["Close"].tail(252).max())
-        low_52 = safe_float(hist["Close"].tail(252).min())
-        midpoint = (high_52 + low_52) / 2 if high_52 and low_52 else None
-        if midpoint:
-            quality_adjustment = 1 + ((quality_score - 50) / 250)
-            fv_methods.append(("52-week midpoint", midpoint * quality_adjustment))
-
-    if price:
-        multi_factor_adjustment = (
-            (valuation_score - 50) / 300 +
-            (quality_score - 50) / 400 +
-            (growth_score - 50) / 450 +
-            (cash_flow_score - 50) / 400
-        )
-        fv_methods.append(("Multi-factor", price * (1 + multi_factor_adjustment)))
-
-    fair_value_estimates = [v for _, v in fv_methods]
-    fair_value = sum(fair_value_estimates) / len(fair_value_estimates) if fair_value_estimates else price
-    fair_value_low = min(fair_value_estimates) if fair_value_estimates else None
-    fair_value_high = max(fair_value_estimates) if fair_value_estimates else None
-    fair_value_methods = " | ".join(f"{name}: {money(v)}" for name, v in fv_methods) if fv_methods else "None"
+    # Fair value from a capped, median-based blend of P/E, EV/FCF, DCF, PEG and 52-week
+    # methods (see estimate_fair_value). fcf_per_share = fcf_yield * price.
+    fcf_per_share = (fcf_yield * price) if (fcf_yield is not None and price) else None
+    fv = estimate_fair_value(
+        price, pe, fcf_per_share, ev_to_fcf, peg,
+        quality_score, growth_score, cash_flow_score, risk_score,
+        revenue_growth, high_52, low_52,
+    )
+    fair_value = fv["central"] if fv["central"] else price
+    fair_value_low = fv["low"]
+    fair_value_high = fv["high"]
+    fair_value_methods = " | ".join(f"{n}: {money(v)}" for n, v in fv["methods"]) if fv["methods"] else "None"
     margin_of_safety = ((fair_value - price) / fair_value) if fair_value and price else None
     upside_to_fair_value = ((fair_value - price) / price) if fair_value and price else None
 
