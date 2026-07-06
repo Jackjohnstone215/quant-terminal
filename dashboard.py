@@ -2139,6 +2139,71 @@ def run_pointintime_backtest(rank_by, top_n, start_date, end_date):
     return result_df, summary, "ok"
 
 
+EFFICACY_FACTORS = [
+    "Overall Quant Score", "Conviction Score", "Investment Score", "Opportunity Score",
+    "Position Trade Score", "Health Score", "Expected Return Score", "Evidence Score",
+    "Research Priority",
+]
+
+
+def run_factor_efficacy(end_date):
+    """Does the scoring actually predict returns? For every past snapshot in the score
+    history, measure each stock's ACTUAL forward return (to end_date), then for each factor
+    compute:
+      - Information Coefficient (Spearman rank correlation of score vs forward return)
+      - the return spread between the top third and bottom third by that factor.
+    Positive IC / spread = the factor ranked winners above losers. Honest, out-of-sample."""
+    history = load_history()
+    if history.empty or "Scan Date" not in history.columns:
+        return None
+    dates = sorted(str(d) for d in history["Scan Date"].dropna().unique())
+    past_dates = [d for d in dates if d < str(end_date)]
+    if not past_dates:
+        return None
+    factors = [f for f in EFFICACY_FACTORS if f in history.columns]
+
+    recs = []
+    for d in past_dates:
+        snap = history[history["Scan Date"].astype(str) == d]
+        for _, r in snap.iterrows():
+            tk = str(r.get("Ticker", "")).upper().strip()
+            if not tk:
+                continue
+            fwd = get_forward_return(tk, d, str(end_date))
+            if fwd is None:
+                continue
+            rec = {"ret": fwd * 100}
+            for f in factors:
+                rec[f] = safe_float(r.get(f))
+            recs.append(rec)
+    if not recs:
+        return None
+    data = pd.DataFrame(recs)
+
+    results = []
+    for f in factors:
+        sub = data[[f, "ret"]].dropna()
+        if len(sub) < 6:
+            continue
+        ic = sub[f].rank().corr(sub["ret"].rank())          # Spearman IC
+        sub = sub.sort_values(f)
+        third = max(1, len(sub) // 3)
+        bottom = sub.head(third)["ret"].mean()
+        top = sub.tail(third)["ret"].mean()
+        results.append({
+            "Factor": f,
+            "Predictive power (IC)": round(ic, 2) if ic == ic else None,
+            "Top ⅓ return %": round(top, 1),
+            "Bottom ⅓ return %": round(bottom, 1),
+            "Top − Bottom %": round(top - bottom, 1),
+            "Samples": len(sub),
+        })
+    if not results:
+        return None
+    res_df = pd.DataFrame(results).sort_values("Predictive power (IC)", ascending=False, na_position="last")
+    return res_df, len(past_dates), len(data)
+
+
 def run_simple_backtest(df, rank_by, top_n, period):
     if df.empty:
         return pd.DataFrame(), {}
@@ -3234,10 +3299,44 @@ def backtesting_page():
         "Valuation Score", "Growth Score", "Relative Strength Score", "Risk Score",
     ]
 
-    honest_tab, illustrative_tab = st.tabs([
+    honest_tab, efficacy_tab, illustrative_tab = st.tabs([
         "✅ Point-in-Time (honest)",
+        "🔬 Factor Efficacy",
         "⚠️ Illustrative (in-sample)",
     ])
+
+    # ---------------- FACTOR EFFICACY: does the scoring predict returns? ----------------
+    with efficacy_tab:
+        st.success(
+            "**Does the engine actually work?** This measures whether each score *predicted* "
+            "the returns that followed. For every past snapshot in your history it computes the "
+            "**Information Coefficient** (rank correlation of score vs. real forward return) and "
+            "the **top-⅓ minus bottom-⅓** return spread. Positive = the factor ranked winners "
+            "above losers."
+        )
+        st.caption(
+            "How to read IC: 0 = no predictive power; 0.05–0.15 is respectable for a single "
+            "factor; negative means it pointed the wrong way. This grows trustworthy as more "
+            "weekly snapshots accumulate — with only a few so far, treat it as an early signal."
+        )
+        end_e = st.text_input("Measure forward returns up to (YYYY-MM-DD)", today_string(), key="eff_end")
+        if st.button("Analyze Factor Efficacy", type="primary"):
+            with st.spinner("Measuring which factors predicted returns..."):
+                out = run_factor_efficacy(end_e)
+            if not out:
+                st.warning("Not enough history yet. Run scans on multiple days (the weekly job does this) so there are past snapshots to test.")
+            else:
+                res_df, n_snaps, n_obs = out
+                st.caption(f"Based on {n_snaps} snapshot date(s) and {n_obs} stock-observations.")
+                best = res_df.iloc[0]
+                if safe_float(best["Predictive power (IC)"], 0) > 0.05:
+                    st.success(f"Best predictor so far: **{best['Factor']}** (IC {best['Predictive power (IC)']}, top−bottom {best['Top − Bottom %']}%). Encouraging early sign.")
+                elif safe_float(best["Predictive power (IC)"], 0) > 0:
+                    st.info("Factors show weakly positive predictive power so far — promising but not yet conclusive.")
+                else:
+                    st.warning("No factor shows positive predictive power in this (small) window. That's honest feedback — let more snapshots accumulate before drawing conclusions.")
+                st.dataframe(res_df, width="stretch")
+                st.caption("Top − Bottom %: return of the highest-scored third minus the lowest-scored third. A consistently positive value across many snapshots is what 'the engine works' looks like.")
 
     # ---------------- HONEST, OUT-OF-SAMPLE BACKTEST ----------------
     with honest_tab:
