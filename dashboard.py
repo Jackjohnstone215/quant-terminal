@@ -940,6 +940,20 @@ class DataUnavailable(Exception):
     pass
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def get_next_earnings(ticker):
+    """Next earnings date (ISO string) for a ticker via Yahoo (free). None if unknown."""
+    try:
+        cal = yf.Ticker(ticker).calendar
+        ed = cal.get("Earnings Date") if isinstance(cal, dict) else None
+        if ed:
+            dt = ed[0] if isinstance(ed, (list, tuple)) else ed
+            return pd.to_datetime(dt).date().isoformat()
+    except Exception:
+        pass
+    return None
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_spy_history():
     """Fetch SPY history ONCE per hour and reuse it for every stock's relative-strength
@@ -3246,6 +3260,28 @@ def watchlist_page():
     )
     if live:
         st.caption(f"Scored live (not in last saved scan): {', '.join(map(str, live))}")
+
+    st.divider()
+    st.subheader("📅 Upcoming Earnings")
+    st.caption("When your watchlist names next report — earnings can move a stock sharply, so plan research/risk around these.")
+    today = today_string()
+    earn_rows = []
+    with st.spinner("Checking earnings dates..."):
+        for t in tickers:
+            dt = get_next_earnings(t)
+            if dt:
+                days = (pd.to_datetime(dt) - pd.to_datetime(today)).days
+                earn_rows.append({"Ticker": t, "Next Earnings": dt,
+                                  "Days Away": days, "When": "past" if days < 0 else f"in {days}d"})
+    if earn_rows:
+        edf = pd.DataFrame(earn_rows)
+        upcoming = edf[edf["Days Away"] >= 0].sort_values("Days Away")
+        soon = upcoming[upcoming["Days Away"] <= 14]
+        if not soon.empty:
+            st.warning("⏰ Reporting within 2 weeks: " + ", ".join(f"{r['Ticker']} ({r['When']})" for _, r in soon.iterrows()))
+        st.dataframe((upcoming if not upcoming.empty else edf)[["Ticker", "Next Earnings", "When"]], width="stretch")
+    else:
+        st.caption("No upcoming earnings dates available for these tickers right now.")
 
 
 def compare_page():
