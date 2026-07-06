@@ -196,6 +196,7 @@ APP_DIR = Path(__file__).parent
 SP500_CACHE = APP_DIR / "sp500_quant_scores.csv"
 SP500_HISTORY = APP_DIR / "sp500_quant_score_history.csv"
 PORTFOLIO_FILE = APP_DIR / "portfolio_manager_ai.csv"
+WATCHLIST_FILE = APP_DIR / "watchlist.csv"
 
 # Load a local .env (for OPENAI_API_KEY etc.) if present. Safe no-op if the file/lib is missing.
 try:
@@ -2004,6 +2005,90 @@ def save_portfolio(df):
     df.to_csv(PORTFOLIO_FILE, index=False)
 
 
+# ============================================================
+# WATCHLIST + ALERTS
+# ============================================================
+
+def load_watchlist():
+    if WATCHLIST_FILE.exists():
+        try:
+            df = pd.read_csv(WATCHLIST_FILE)
+            return [str(t).upper().strip() for t in df["Ticker"].dropna().tolist() if str(t).strip()]
+        except Exception:
+            return []
+    return []
+
+
+def save_watchlist(tickers):
+    clean = []
+    for t in tickers:
+        t = str(t).upper().strip()
+        if t and t not in clean:
+            clean.append(t)
+    pd.DataFrame({"Ticker": clean}).to_csv(WATCHLIST_FILE, index=False)
+    return clean
+
+
+def compute_alerts(row):
+    """Return a list of (emoji, message) alerts currently triggered for a scored stock.
+    These are evaluated whenever you view the watchlist — 'what needs my attention now'."""
+    alerts = []
+    conv = safe_float(row.get("Conviction Score"), 0)
+    upside = safe_float(row.get("Upside %"), 0)
+    health = safe_float(row.get("Health Score"), 0)
+    ptrade = safe_float(row.get("Position Trade Score"), 0)
+    risk = safe_float(row.get("Risk Score"), 100)
+    fin = safe_float(row.get("Financial Strength Score"), 100)
+    tier = str(row.get("Tier", ""))
+    change = safe_float(row.get("Conviction Change"), 0)
+
+    if conv >= 75:
+        alerts.append(("🟢", f"High conviction ({conv:.0f})"))
+    if upside >= 20 and health >= 60:
+        alerts.append(("💰", f"Undervalued: {upside:.0f}% upside to fair value"))
+    if ptrade >= 75:
+        alerts.append(("📈", f"Momentum setup (Position Trade {ptrade:.0f})"))
+    if "Tier 1" in tier or "Tier 2" in tier:
+        alerts.append(("⭐", tier.split("—")[0].strip()))
+    if upside is not None and upside <= 0:
+        alerts.append(("🔻", "Trading at/above fair value"))
+    if risk < 40:
+        alerts.append(("⚠️", "Elevated volatility/drawdown risk"))
+    if fin < 40:
+        alerts.append(("⚠️", "Weak balance sheet"))
+    if change >= 8:
+        alerts.append(("⬆️", f"Conviction rose +{change:.0f} since last scan"))
+    if change <= -8:
+        alerts.append(("⬇️", f"Conviction fell {change:.0f} since last scan"))
+    return alerts
+
+
+def build_watchlist_analysis(tickers):
+    """Score the watchlist tickers, preferring the saved scan (free) and only scoring
+    live (uses an FMP/Yahoo call) the ones not already in it. Returns (df, live_scored)."""
+    saved = load_sp500_scores()
+    saved_map = {}
+    if not saved.empty and "Ticker" in saved.columns:
+        saved = enhance_research_columns(saved)
+        saved = add_score_change(saved)
+        saved_map = {str(r["Ticker"]).upper(): r for _, r in saved.iterrows()}
+
+    rows, live = [], []
+    for t in tickers:
+        if t in saved_map:
+            rows.append(saved_map[t].to_dict())
+        else:
+            try:
+                rows.append(get_quant_score(t))
+                live.append(t)
+            except DataUnavailable:
+                live.append(f"{t} (no data)")
+            except Exception:
+                live.append(f"{t} (error)")
+    df = pd.DataFrame(rows)
+    return df, live
+
+
 def get_deploy_percent(market_health):
     market_health = safe_float(market_health, 50)
     if market_health >= 75:
@@ -2979,12 +3064,79 @@ def learning_center():
         st.write("- Weak or negative relative strength")
 
 
+def watchlist_page():
+    st.title("My Watchlist")
+    st.caption("Your saved names, front and center — with alerts flagging what needs attention today.")
+
+    tickers = load_watchlist()
+
+    with st.expander("✏️ Edit watchlist", expanded=not tickers):
+        col_a, col_b = st.columns([2, 1])
+        with col_a:
+            new_t = st.text_input("Add ticker(s) — comma-separated", "", placeholder="e.g. NVDA, COST, JPM")
+        with col_b:
+            st.write("")
+            st.write("")
+            if st.button("➕ Add", width="stretch"):
+                add = [x.strip().upper() for x in new_t.replace(";", ",").split(",") if x.strip()]
+                tickers = save_watchlist(tickers + add)
+                st.rerun()
+        if tickers:
+            remove = st.multiselect("Remove tickers", tickers)
+            if remove and st.button("🗑️ Remove selected"):
+                tickers = save_watchlist([t for t in tickers if t not in remove])
+                st.rerun()
+
+    if not tickers:
+        st.info("Your watchlist is empty. Add a few tickers above to start tracking them.")
+        return
+
+    st.write(f"**Tracking {len(tickers)}:** {', '.join(tickers)}")
+    if not st.button("Analyze Watchlist", type="primary"):
+        st.caption("Click **Analyze Watchlist** to pull the latest scores and alerts.")
+        return
+
+    with st.spinner("Scoring your watchlist..."):
+        df, live = build_watchlist_analysis(tickers)
+
+    if df.empty:
+        st.warning("Couldn't score any of your watchlist tickers. Check the symbols.")
+        return
+    df = enhance_research_columns(df)
+    if "Conviction Change" not in df.columns:
+        df = add_score_change(df)
+
+    # ----- Alerts summary -----
+    st.subheader("🔔 Alerts")
+    any_alert = False
+    for _, row in df.sort_values("Conviction Score", ascending=False).iterrows():
+        fired = compute_alerts(row)
+        if fired:
+            any_alert = True
+            badges = "  ".join(f"{e} {m}" for e, m in fired)
+            st.markdown(f"**{row['Ticker']}** — {row.get('Company','')}  \n{badges}")
+    if not any_alert:
+        st.caption("No alerts firing right now — nothing on your watchlist needs urgent attention.")
+
+    st.divider()
+    st.subheader("Watchlist Scores")
+    cols = ["Ticker", "Company", "Sector", "Price", "Fair Value", "Upside %",
+            "Overall Quant Score", "Conviction Score", "Health Score", "Valuation Score",
+            "Momentum Score", "Data Source"]
+    st.dataframe(
+        df.sort_values("Conviction Score", ascending=False)[[c for c in cols if c in df.columns]],
+        width="stretch",
+    )
+    if live:
+        st.caption(f"Scored live (not in last saved scan): {', '.join(map(str, live))}")
+
+
 def main():
     apply_custom_style()
     app_header()
     page = st.sidebar.radio(
         "Choose Page",
-        ["Market Command Center", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "Backtesting Lab", "Learning Center"]
+        ["Market Command Center", "My Watchlist", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
@@ -2993,6 +3145,8 @@ def main():
 
     if page == "Market Command Center":
         market_command_center()
+    elif page == "My Watchlist":
+        watchlist_page()
     elif page == "Research Queue":
         research_queue_page()
     elif page == "Portfolio Manager AI":

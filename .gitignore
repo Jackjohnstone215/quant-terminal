@@ -4,6 +4,7 @@
 
 # --- Personal data (keep your real holdings off a public repo) ---
 portfolio_manager_ai.csv
+watchlist.csv
 
 # --- Python ---
 .venv/
