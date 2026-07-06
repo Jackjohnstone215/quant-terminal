@@ -54,7 +54,11 @@ def classify(app_v, truth_v, tolerant):
         return "SKIP"
     if a is None:
         return "MISSING"
-    rel = abs(a - t) / abs(t) if t else (0 if abs(a - t) < 1e-9 else 9)
+    # Near-zero values (e.g. net-debt/EBITDA ~0): a tiny absolute gap can look like a huge
+    # relative error, so judge these by absolute difference instead.
+    if abs(t) < 0.1:
+        return "OK" if abs(a - t) < 0.1 else "DIFF"
+    rel = abs(a - t) / abs(t)
     if rel <= TOL_OK:
         return "OK"
     if rel <= TOL_SOFT or tolerant:
@@ -67,11 +71,15 @@ def main():
     tallies = {"OK": 0, "SOFT": 0, "DIFF": 0, "MISSING": 0, "SKIP": 0}
     diffs = []
     yahoo_fallback = []
+    dead = []
     audited = 0
 
     for i, tkr in enumerate(universe, 1):
         try:
             row = d.get_quant_score(tkr)
+        except d.DataUnavailable:
+            dead.append(tkr)          # delisted/renamed — correctly skipped, not a mismatch
+            continue
         except Exception as e:
             diffs.append((tkr, "(scoring failed)", "", str(e)[:60]))
             continue
@@ -98,6 +106,7 @@ def main():
         f"- Checks passed (exact or minor): **{passed}/{total}**  ({tallies['OK']} exact, {tallies['SOFT']} minor)",
         f"- **Mismatches (DIFF): {tallies['DIFF']}** · Missing: {tallies['MISSING']}",
         f"- Stocks that fell back to Yahoo (FMP unavailable, not audited): {len(yahoo_fallback)} {yahoo_fallback if yahoo_fallback else ''}",
+        f"- Dead/delisted tickers correctly skipped: {len(dead)} {dead if dead else ''}",
         "",
     ]
     if diffs:
