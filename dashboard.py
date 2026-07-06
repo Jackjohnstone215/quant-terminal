@@ -10,6 +10,8 @@ import os
 import json
 import urllib.request
 import urllib.error
+import plotly.graph_objects as go
+import plotly.express as px
 
 st.set_page_config(
     page_title="Mastermind Quant Investing Terminal",
@@ -97,6 +99,97 @@ def render_score_bars(scores, title=None):
             """
         )
     st.markdown("".join(rows), unsafe_allow_html=True)
+
+
+# ---- Plotly charts (dark-theme styled) ----
+CHART_BG = "#0B0E14"
+CHART_GRID = "#232a36"
+ACCENT = "#00C39A"
+
+
+def _style_fig(fig, height=380):
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font_color="#E6EAF1",
+        height=height,
+        margin=dict(l=10, r=10, t=40, b=10),
+    )
+    return fig
+
+
+def factor_radar(row):
+    """Radar/spider chart of a stock's six core factor scores (0-100)."""
+    axes = ["Quality", "Valuation", "Growth", "Financial Health", "Momentum", "Risk Control"]
+    keys = ["Quality Score", "Valuation Score", "Growth Score",
+            "Financial Strength Score", "Momentum Score", "Risk Score"]
+    vals = [max(0, min(100, safe_float(row.get(k), 0))) for k in keys]
+    # close the loop
+    axes_c, vals_c = axes + [axes[0]], vals + [vals[0]]
+    fig = go.Figure(go.Scatterpolar(
+        r=vals_c, theta=axes_c, fill="toself",
+        line=dict(color=ACCENT, width=2), fillcolor="rgba(0,195,154,0.25)",
+        hovertemplate="%{theta}: %{r:.0f}/100<extra></extra>",
+    ))
+    fig.update_layout(
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(range=[0, 100], gridcolor=CHART_GRID, tickfont=dict(size=9)),
+            angularaxis=dict(gridcolor=CHART_GRID),
+        ),
+        showlegend=False,
+    )
+    return _style_fig(fig, height=360)
+
+
+def valuation_quality_scatter(df):
+    """Scatter of Valuation vs Quality for the whole scan — the cheap-and-good corner
+    is the top-right. Colored by sector, hover shows the ticker."""
+    d2 = df.copy()
+    for c in ["Valuation Score", "Quality Score", "Overall Quant Score"]:
+        d2[c] = pd.to_numeric(d2[c], errors="coerce")
+    d2 = d2.dropna(subset=["Valuation Score", "Quality Score"])
+    fig = px.scatter(
+        d2, x="Valuation Score", y="Quality Score",
+        color="Sector", hover_name="Ticker",
+        hover_data={"Overall Quant Score": True, "Valuation Score": ":.0f", "Quality Score": ":.0f"},
+        size=d2["Overall Quant Score"].clip(lower=1),
+    )
+    # quadrant guides at the midpoint
+    fig.add_hline(y=50, line_dash="dot", line_color=CHART_GRID)
+    fig.add_vline(x=50, line_dash="dot", line_color=CHART_GRID)
+    fig.add_annotation(x=88, y=95, text="cheap & high-quality", showarrow=False,
+                       font=dict(color=ACCENT, size=11))
+    fig.update_xaxes(range=[0, 100], gridcolor=CHART_GRID, title="Valuation (higher = cheaper)")
+    fig.update_yaxes(range=[0, 100], gridcolor=CHART_GRID, title="Quality (higher = better)")
+    return _style_fig(fig, height=520)
+
+
+def price_with_fair_value(hist, fv_low, fv_high, fv_central):
+    """Price history line with the fair-value range shaded across it — so you can see at a
+    glance whether the stock is trading below, inside, or above its estimated fair value."""
+    fig = go.Figure()
+    x = list(hist.index)
+    fig.add_trace(go.Scatter(
+        x=x, y=hist["Close"], mode="lines", name="Price",
+        line=dict(color=ACCENT, width=2),
+        hovertemplate="%{x|%b %Y}: $%{y:.2f}<extra></extra>",
+    ))
+    lo, hi, mid = safe_float(fv_low), safe_float(fv_high), safe_float(fv_central)
+    if lo and hi and x:
+        # shaded fair-value band spanning the whole time axis
+        fig.add_trace(go.Scatter(x=[x[0], x[-1]], y=[hi, hi], mode="lines",
+                                 line=dict(width=0), showlegend=False, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=[x[0], x[-1]], y=[lo, lo], mode="lines", fill="tonexty",
+                                 fillcolor="rgba(224,179,77,0.15)", line=dict(width=0),
+                                 name="Fair-value range", hoverinfo="skip"))
+        if mid:
+            fig.add_hline(y=mid, line_dash="dash", line_color="#E0B34D",
+                          annotation_text="fair value", annotation_font_color="#E0B34D")
+    fig.update_yaxes(gridcolor=CHART_GRID, title="Price ($)")
+    fig.update_xaxes(gridcolor=CHART_GRID)
+    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0))
+    return _style_fig(fig, height=380)
 
 
 APP_DIR = Path(__file__).parent
@@ -2439,6 +2532,13 @@ def opportunity_engine():
         st.subheader("Best Overall Research Priorities")
         st.dataframe(df.sort_values("Research Priority", ascending=False).head(25), width="stretch")
 
+        st.subheader("Opportunity Map")
+        st.caption("Each dot is a stock. **Top-right = cheap *and* high-quality** (the sweet spot). Bubble size = overall score; hover for the ticker.")
+        try:
+            st.plotly_chart(valuation_quality_scatter(df), width="stretch")
+        except Exception:
+            st.info("Not enough scored data to draw the map yet — run a scan first.")
+
         st.subheader("Highest Conviction")
         st.dataframe(df.sort_values(["Conviction Score", "Evidence Score"], ascending=False).head(15), width="stretch")
         st.divider()
@@ -2532,7 +2632,10 @@ def stock_deep_dive():
         c7.metric("Research Time", row["Research Time"])
         c8.metric("Biggest Risk", row["Biggest Risk"])
         if len(hist):
-            st.line_chart(hist["Close"])
+            st.plotly_chart(
+                price_with_fair_value(hist, row.get("Fair Value Low"), row.get("Fair Value High"), row.get("Fair Value")),
+                width="stretch",
+            )
         tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
             "Master Scores", "Valuation + Cash Flow", "Quality + Health",
             "Momentum + News", "Bull vs Bear", "🤖 AI Analyst", "Metric Guide"
@@ -2550,16 +2653,22 @@ def stock_deep_dive():
                 {"Score": "Research Priority", "Value": row["Research Priority"], "Purpose": "Final research queue ranking."},
                 {"Score": "Overall Quant Score", "Value": row["Overall Quant Score"], "Purpose": "Combined ranking score."},
             ])
-            render_score_bars({
-                "Investment": row["Investment Score"],
-                "Opportunity": row["Opportunity Score"],
-                "Position Trade": row["Position Trade Score"],
-                "Health": row["Health Score"],
-                "Expected Return": row["Expected Return Score"],
-                "Conviction": row["Conviction Score"],
-                "Evidence": row["Evidence Score"],
-                "Overall Quant": row["Overall Quant Score"],
-            })
+            rc1, rc2 = st.columns([1, 1])
+            with rc1:
+                st.markdown("**Factor shape**")
+                st.plotly_chart(factor_radar(row), width="stretch")
+            with rc2:
+                st.markdown("**Master scores**")
+                render_score_bars({
+                    "Investment": row["Investment Score"],
+                    "Opportunity": row["Opportunity Score"],
+                    "Position Trade": row["Position Trade Score"],
+                    "Health": row["Health Score"],
+                    "Expected Return": row["Expected Return Score"],
+                    "Conviction": row["Conviction Score"],
+                    "Evidence": row["Evidence Score"],
+                    "Overall Quant": row["Overall Quant Score"],
+                })
             with st.expander("Score details & what each one is for"):
                 st.dataframe(score_df, width="stretch")
             st.write(f"**Labels:** {row['Labels']}")
