@@ -866,16 +866,11 @@ def get_market_news(hours_back=10):
     return sorted(unique, key=lambda x: (x["Importance"], x["Published"]), reverse=True)
 
 
-def _dcf_fair_value(fcf_ps, growth_rate, risk_score, years=5, g_term=0.025):
-    """Simple 2-stage discounted-cash-flow value per share. Grows current FCF/share for
-    `years` at a capped stage-1 rate, then a perpetuity at g_term, discounted at a rate
-    that rises with risk. Returns None for companies with no positive free cash flow."""
+def dcf_from_params(fcf_ps, g1, r, g_term=0.025, years=5):
+    """Core 2-stage DCF: grow FCF/share at g1 for `years`, then a perpetuity at g_term,
+    all discounted at r. Returns value per share, or None if inputs are invalid."""
     fcf_ps = safe_float(fcf_ps)
-    if fcf_ps is None or fcf_ps <= 0:
-        return None
-    g1 = min(max(safe_float(growth_rate, 0.04) or 0.04, 0.0), 0.13)   # cap stage-1 growth at 13%
-    r = 0.09 if safe_float(risk_score, 50) >= 45 else 0.11            # riskier -> higher discount
-    if r <= g_term:
+    if fcf_ps is None or fcf_ps <= 0 or r is None or g_term is None or r <= g_term:
         return None
     pv, cf = 0.0, fcf_ps
     for yr in range(1, years + 1):
@@ -884,6 +879,14 @@ def _dcf_fair_value(fcf_ps, growth_rate, risk_score, years=5, g_term=0.025):
     terminal = cf * (1 + g_term) / (r - g_term)
     pv += terminal / ((1 + r) ** years)
     return pv
+
+
+def _dcf_fair_value(fcf_ps, growth_rate, risk_score, years=5, g_term=0.025):
+    """Engine DCF: caps stage-1 growth at 13% and sets the discount rate by risk, then
+    calls the core DCF. Returns None for companies with no positive free cash flow."""
+    g1 = min(max(safe_float(growth_rate, 0.04) or 0.04, 0.0), 0.13)
+    r = 0.09 if safe_float(risk_score, 50) >= 45 else 0.11
+    return dcf_from_params(fcf_ps, g1, r, g_term=g_term, years=years)
 
 
 def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth_score,
@@ -3489,6 +3492,86 @@ def etf_explorer_page():
             st.caption("Lower expense ratio and drawdown are better; compare returns *alongside* volatility, not alone.")
 
 
+def valuation_lab_page():
+    st.title("Valuation Lab")
+    st.caption("See exactly how a discounted-cash-flow (DCF) valuation works — move the assumptions and watch fair value change. The best way to build intuition for what a stock is really worth.")
+
+    with st.expander("What is a DCF? (30-second version)", expanded=False):
+        st.write(
+            "A DCF values a company as the sum of all its future free cash flow, discounted "
+            "back to today (a dollar next year is worth less than a dollar now). You assume: "
+            "(1) how fast cash flow grows for the next several years, (2) a long-run 'terminal' "
+            "growth rate forever after, and (3) a discount rate = the annual return you require. "
+            "Small changes in these move the answer a lot — which is exactly why fair value is a range."
+        )
+
+    t = st.text_input("Ticker", "MSFT").upper().strip()
+    if st.button("Load", type="primary"):
+        try:
+            with st.spinner("Loading cash-flow data..."):
+                r = get_quant_score(t)
+            fcfy, price = safe_float(r.get("FCF Yield %")), safe_float(r.get("Price"))
+            st.session_state["vlab"] = {
+                "ticker": t, "company": r.get("Company", ""), "price": price,
+                "fcf_ps": (fcfy / 100 * price) if (fcfy and price) else None,
+                "def_g": min(max((safe_float(r.get("Revenue Growth %"), 6) or 6) / 100, 0.0), 0.20),
+                "src": r.get("Data Source", ""),
+            }
+        except Exception as e:
+            st.error(f"Couldn't load {t}: {e}")
+
+    v = st.session_state.get("vlab")
+    if not v:
+        st.info("Enter a ticker and click **Load** to begin.")
+        return
+    if not v["fcf_ps"] or v["fcf_ps"] <= 0:
+        st.warning(f"{v['ticker']} has no positive free cash flow, so a DCF isn't meaningful. Try a profitable, cash-generative company.")
+        return
+
+    st.subheader(f"{v['ticker']} — {v['company']}")
+    st.caption(f"Current price {money(v['price'])} · starting FCF/share ≈ {money(v['fcf_ps'])} · data: {v['src']}")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        g1 = st.slider("Stage-1 FCF growth per year, %", 0, 30, int(round(v["def_g"] * 100)),
+                       help="How fast free cash flow grows during the high-growth years.")
+        r_rate = st.slider("Discount rate (your required return), %", 6, 15, 9,
+                           help="Higher = you demand more return / see more risk = lower value.")
+    with c2:
+        g_term = st.slider("Terminal growth forever after, %", 0.0, 4.0, 2.5, 0.5,
+                           help="Long-run growth in perpetuity — keep near GDP/inflation (2–3%).")
+        years = st.slider("Number of high-growth years", 3, 10, 5)
+
+    fv = dcf_from_params(v["fcf_ps"], g1 / 100, r_rate / 100, g_term / 100, years)
+    if fv is None:
+        st.warning("Invalid combination — the discount rate must be higher than terminal growth.")
+        return
+    upside = (fv - v["price"]) / v["price"] * 100 if v["price"] else 0
+    m1, m2, m3 = st.columns(3)
+    m1.metric("DCF fair value / share", money(fv))
+    m2.metric("Current price", money(v["price"]))
+    m3.metric("Upside / (downside)", f"{upside:.0f}%", delta=f"{upside:.0f}%")
+    if upside > 15:
+        st.success(f"Under these assumptions, {v['ticker']} looks **undervalued** by ~{upside:.0f}%.")
+    elif upside < -15:
+        st.error(f"Under these assumptions, {v['ticker']} looks **overvalued** by ~{abs(upside):.0f}%.")
+    else:
+        st.info(f"Under these assumptions, {v['ticker']} looks **roughly fairly valued**.")
+
+    st.subheader("Sensitivity: fair value by growth × discount rate")
+    growths = sorted({max(0, g1 - 8), max(0, g1 - 4), g1, g1 + 4, g1 + 8})
+    rates = sorted({max(g_term + 1, r_rate - 2), r_rate - 1, r_rate, r_rate + 1, r_rate + 2})
+    grid = {}
+    for rr in rates:
+        rowvals = {}
+        for gg in growths:
+            val = dcf_from_params(v["fcf_ps"], gg / 100, rr / 100, g_term / 100, years)
+            rowvals[f"{gg:.0f}% growth"] = round(val) if val else None
+        grid[f"{rr:.0f}% discount"] = rowvals
+    st.dataframe(pd.DataFrame(grid).T, width="stretch")
+    st.caption("Rows = discount rate, columns = growth. Notice how much the value swings with small changes — that uncertainty is why the engine shows fair value as a *range*, not a single number. Current price for reference: " + money(v["price"]) + ".")
+
+
 def _latin1(s):
     """fpdf core fonts are latin-1 only; strip characters they can't encode."""
     return str(s).replace("—", "-").replace("–", "-").replace("’", "'").replace("“", '"').replace("”", '"').encode("latin-1", "replace").decode("latin-1")
@@ -3601,7 +3684,7 @@ def main():
     app_header()
     page = st.sidebar.radio(
         "Choose Page",
-        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Backtesting Lab", "Learning Center"]
+        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
@@ -3624,6 +3707,8 @@ def main():
         stock_deep_dive()
     elif page == "ETF Explorer":
         etf_explorer_page()
+    elif page == "Valuation Lab":
+        valuation_lab_page()
     elif page == "Backtesting Lab":
         backtesting_page()
     else:
