@@ -142,6 +142,30 @@ def factor_radar(row):
     return _style_fig(fig, height=360)
 
 
+def factor_radar_multi(df):
+    """Overlay several stocks' factor shapes on one radar for side-by-side comparison."""
+    axes = ["Quality", "Valuation", "Growth", "Financial Health", "Momentum", "Risk Control"]
+    keys = ["Quality Score", "Valuation Score", "Growth Score",
+            "Financial Strength Score", "Momentum Score", "Risk Score"]
+    palette = ["#00C39A", "#E0B34D", "#6aa9ff", "#E0574D", "#b98cff"]
+    fig = go.Figure()
+    for i, (_, row) in enumerate(df.iterrows()):
+        vals = [max(0, min(100, safe_float(row.get(k), 0))) for k in keys]
+        color = palette[i % len(palette)]
+        fig.add_trace(go.Scatterpolar(
+            r=vals + [vals[0]], theta=axes + [axes[0]], fill="toself", name=str(row.get("Ticker", "")),
+            line=dict(color=color, width=2), opacity=0.7,
+            hovertemplate="%{theta}: %{r:.0f}<extra>" + str(row.get("Ticker", "")) + "</extra>",
+        ))
+    fig.update_layout(
+        polar=dict(bgcolor="rgba(0,0,0,0)",
+                   radialaxis=dict(range=[0, 100], gridcolor=CHART_GRID, tickfont=dict(size=9)),
+                   angularaxis=dict(gridcolor=CHART_GRID)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.05),
+    )
+    return _style_fig(fig, height=420)
+
+
 def valuation_quality_scatter(df):
     """Scatter of Valuation vs Quality for the whole scan — the cheap-and-good corner
     is the top-right. Colored by sector, hover shows the ticker."""
@@ -3131,12 +3155,48 @@ def watchlist_page():
         st.caption(f"Scored live (not in last saved scan): {', '.join(map(str, live))}")
 
 
+def compare_page():
+    st.title("Compare Stocks")
+    st.caption("Put 2–4 stocks head-to-head — factor shapes overlaid, key metrics side by side.")
+
+    default = ", ".join(load_watchlist()[:3]) or "MSFT, NVDA, GOOGL"
+    raw = st.text_input("Tickers to compare (2–4, comma-separated)", default)
+    tickers = [x.strip().upper() for x in raw.replace(";", ",").split(",") if x.strip()][:4]
+
+    if st.button("Compare", type="primary"):
+        if len(tickers) < 2:
+            st.warning("Enter at least two tickers.")
+            return
+        with st.spinner("Scoring..."):
+            df, live = build_watchlist_analysis(tickers)
+        if df.empty or len(df) < 2:
+            st.warning("Couldn't score enough of those tickers to compare.")
+            return
+        df = enhance_research_columns(df)
+
+        st.subheader("Factor shapes")
+        st.plotly_chart(factor_radar_multi(df), width="stretch")
+
+        st.subheader("Side-by-side")
+        metrics = [
+            "Company", "Sector", "Price", "Fair Value", "Upside %", "Overall Quant Score",
+            "Conviction Score", "Investment Score", "Opportunity Score", "Health Score",
+            "Quality Score", "Valuation Score", "Growth Score", "Momentum Score", "Risk Score",
+            "P/E", "PEG", "FCF Yield %", "ROIC Proxy %", "Debt/Equity", "Revenue Growth %",
+            "Data Source",
+        ]
+        table = df.set_index("Ticker")[[m for m in metrics if m in df.columns]].T
+        st.dataframe(table, width="stretch")
+        if live:
+            st.caption(f"Scored live (not in last saved scan): {', '.join(map(str, live))}")
+
+
 def main():
     apply_custom_style()
     app_header()
     page = st.sidebar.radio(
         "Choose Page",
-        ["Market Command Center", "My Watchlist", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "Backtesting Lab", "Learning Center"]
+        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
@@ -3147,6 +3207,8 @@ def main():
         market_command_center()
     elif page == "My Watchlist":
         watchlist_page()
+    elif page == "Compare Stocks":
+        compare_page()
     elif page == "Research Queue":
         research_queue_page()
     elif page == "Portfolio Manager AI":
