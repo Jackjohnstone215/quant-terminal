@@ -1,0 +1,43 @@
+name: Accuracy Audit
+
+# Runs the full accuracy audit and commits ACCURACY_AUDIT.md so you can read the results.
+# Scheduled on Fridays (a different day from the Monday scan, so the two never compete for
+# the FMP free-tier daily quota). Also runnable on demand from the Actions tab.
+
+on:
+  schedule:
+    - cron: "0 13 * * 5"     # Fridays 13:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run accuracy audit
+        run: python audit.py
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      - name: Commit audit report
+        run: |
+          git config user.name "audit-bot"
+          git config user.email "actions@github.com"
+          git add ACCURACY_AUDIT.md
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Accuracy audit report ($(date -u +%Y-%m-%d))"
+            git push
+          fi
