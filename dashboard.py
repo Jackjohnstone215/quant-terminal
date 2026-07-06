@@ -1037,6 +1037,41 @@ def analyze_etf(ticker):
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
+def get_analyst_data(ticker):
+    """Forward-looking analyst data from Yahoo (free): consensus price target, rating,
+    forward P/E / EPS, and next-year EPS growth estimate. Complements the engine's
+    trailing-data valuation with a future-facing view."""
+    out = {k: None for k in ["forward_pe", "forward_eps", "trailing_eps", "target_mean",
+                             "target_high", "target_low", "target_median", "n_analysts",
+                             "rating", "rec_mean", "eps_growth_next_y", "current"]}
+    try:
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+        out.update({
+            "forward_pe": safe_float(info.get("forwardPE")),
+            "forward_eps": safe_float(info.get("forwardEps")),
+            "trailing_eps": safe_float(info.get("trailingEps")),
+            "target_mean": safe_float(info.get("targetMeanPrice")),
+            "target_high": safe_float(info.get("targetHighPrice")),
+            "target_low": safe_float(info.get("targetLowPrice")),
+            "target_median": safe_float(info.get("targetMedianPrice")),
+            "n_analysts": safe_float(info.get("numberOfAnalystOpinions")),
+            "rating": info.get("recommendationKey"),
+            "rec_mean": safe_float(info.get("recommendationMean")),
+            "current": safe_float(info.get("currentPrice")) or safe_float(info.get("regularMarketPrice")),
+        })
+        try:
+            ee = t.earnings_estimate
+            if ee is not None and hasattr(ee, "index") and "+1y" in ee.index:
+                out["eps_growth_next_y"] = safe_float(ee.loc["+1y", "growth"])
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return out
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
 def get_next_earnings(ticker):
     """Next earnings date (ISO string) for a ticker via Yahoo (free). None if unknown."""
     try:
@@ -2975,9 +3010,9 @@ def stock_deep_dive():
                 price_with_fair_value(hist, row.get("Fair Value Low"), row.get("Fair Value High"), row.get("Fair Value")),
                 width="stretch",
             )
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab7 = st.tabs([
             "Master Scores", "Valuation + Cash Flow", "Quality + Health",
-            "Momentum + News", "Bull vs Bear", "🤖 AI Analyst", "Metric Guide"
+            "📊 Analyst View", "Momentum + News", "Bull vs Bear", "🤖 AI Analyst", "Metric Guide"
         ])
         with tab1:
             st.subheader("Master Quant Scores")
@@ -3059,6 +3094,55 @@ def stock_deep_dive():
                 {"Metric": "Net Debt/EBITDA", "Value": row["Net Debt/EBITDA"], "Meaning": "Debt compared to earnings power."},
             ])
             st.dataframe(health_df, width="stretch")
+        with tab8:
+            st.subheader("Analyst & Forward View")
+            st.caption("Forward-looking Wall Street consensus (Yahoo Finance). Complements the engine's trailing-data valuation with what analysts expect ahead.")
+            a = get_analyst_data(ticker)
+            price_now = safe_float(row.get("Price")) or a.get("current")
+            if not a.get("target_mean") and not a.get("forward_pe"):
+                st.info("No analyst coverage data available for this ticker.")
+            else:
+                rating_map = {
+                    "strong_buy": "🟢 Strong Buy", "buy": "🟢 Buy", "hold": "🟡 Hold",
+                    "underperform": "🔴 Underperform", "sell": "🔴 Sell",
+                }
+                rating = rating_map.get(str(a.get("rating")), str(a.get("rating") or "N/A").replace("_", " ").title())
+                x1, x2, x3 = st.columns(3)
+                x1.metric("Consensus Rating", rating,
+                          f"{a['n_analysts']:.0f} analysts" if a.get("n_analysts") else None)
+                tgt = a.get("target_mean")
+                if tgt and price_now:
+                    tgt_upside = (tgt - price_now) / price_now * 100
+                    x2.metric("Avg Price Target", money(tgt), f"{tgt_upside:+.0f}% vs price")
+                else:
+                    x2.metric("Avg Price Target", money(tgt) if tgt else "N/A")
+                x3.metric("Target Range", f"{money(a.get('target_low'))} – {money(a.get('target_high'))}")
+
+                y1, y2, y3 = st.columns(3)
+                y1.metric("Forward P/E", f"{a['forward_pe']:.1f}" if a.get("forward_pe") else "N/A")
+                y2.metric("Forward EPS", money(a.get("forward_eps")))
+                if a.get("eps_growth_next_y") is not None:
+                    y3.metric("Est. EPS growth (next yr)", f"{a['eps_growth_next_y'] * 100:+.0f}%")
+                else:
+                    y3.metric("Est. EPS growth (next yr)", "N/A")
+
+                # Two independent views side by side
+                st.markdown("**Two independent views of value:**")
+                dcf_fv = safe_float(row.get("Fair Value"))
+                st.write(
+                    f"- 🧮 **Engine fair value (DCF/multiples, trailing):** {money(dcf_fv)}"
+                    + (f"  → {((dcf_fv-price_now)/price_now*100):+.0f}%" if dcf_fv and price_now else "")
+                )
+                st.write(
+                    f"- 👔 **Analyst avg target (~12-mo, forward):** {money(tgt)}"
+                    + (f"  → {((tgt-price_now)/price_now*100):+.0f}%" if tgt and price_now else "")
+                )
+                if a.get("forward_pe") and row.get("P/E"):
+                    fpe, tpe = a["forward_pe"], safe_float(row.get("P/E"))
+                    if tpe:
+                        cheaper = "cheaper" if fpe < tpe else "richer"
+                        st.caption(f"Forward P/E ({fpe:.1f}) is {cheaper} than trailing P/E ({tpe:.1f}) — analysts expect earnings to {'grow' if fpe < tpe else 'fall'}.")
+                st.caption("⚠️ Analyst targets are ~12-month price targets, tend to run optimistic, and reflect sentiment — treat as one input, not truth. When the engine and analysts disagree sharply, that's a flag to dig deeper.")
         with tab4:
             st.subheader("Momentum + Why Moving")
             if move:
