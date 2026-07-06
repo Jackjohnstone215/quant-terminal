@@ -1599,18 +1599,62 @@ def score_many(tickers):
 
 
 @st.cache_data(ttl=86400)
-def get_sp500_tickers():
+def get_sp500_table():
+    """Full S&P 500 list with GICS sector (free, from Wikipedia). Returns a DataFrame with
+    Symbol + Sector. Wikipedia 403s requests without a browser User-Agent, so we fetch the
+    HTML ourselves with one set before parsing — otherwise the whole universe silently
+    collapses to the small fallback list."""
+    import io
     try:
-        tables = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
-        df = tables[0]
-        return df["Symbol"].astype(str).str.replace(".", "-", regex=False).tolist()
+        req = urllib.request.Request(
+            "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+        )
+        with urllib.request.urlopen(req, timeout=25) as r:
+            html = r.read().decode("utf-8", errors="ignore")
+        tables = pd.read_html(io.StringIO(html))
+        df = tables[0].rename(columns={"GICS Sector": "Sector"})
+        df["Symbol"] = df["Symbol"].astype(str).str.replace(".", "-", regex=False)
+        out = df[["Symbol", "Sector"]].dropna()
+        if len(out) >= 100:      # sanity: a real S&P 500 pull has ~500 rows
+            return out
     except Exception:
-        return QUALITY_COMPOUNDERS + RECOVERY_WATCHLIST
+        pass
+    fallback = QUALITY_COMPOUNDERS + RECOVERY_WATCHLIST
+    return pd.DataFrame({"Symbol": fallback, "Sector": ["Unknown"] * len(fallback)})
 
 
-def save_sp500_scores(df):
+def get_sp500_tickers():
+    return get_sp500_table()["Symbol"].tolist()
+
+
+def sp500_sectors():
+    return sorted(get_sp500_table()["Sector"].dropna().unique().tolist())
+
+
+def tickers_for_sectors(sectors):
+    """Symbols in the chosen GICS sectors (all if none/empty selected)."""
+    table = get_sp500_table()
+    if not sectors:
+        return table["Symbol"].tolist()
+    return table[table["Sector"].isin(sectors)]["Symbol"].tolist()
+
+
+def save_sp500_scores(df, merge=True):
     df = enhance_research_columns(df)
-    df.to_csv(SP500_CACHE, index=False)
+    # Merge into the existing cache by ticker (new scores replace old for the same names,
+    # everything else is kept) so scanning one sector at a time ACCUMULATES coverage
+    # instead of wiping the rest.
+    if merge and SP500_CACHE.exists():
+        try:
+            old = pd.read_csv(SP500_CACHE)
+            keep = old[~old["Ticker"].astype(str).isin(df["Ticker"].astype(str))]
+            combined = pd.concat([keep, df], ignore_index=True)
+        except Exception:
+            combined = df
+    else:
+        combined = df
+    combined.to_csv(SP500_CACHE, index=False)
     history_cols = [
         "Scan Date", "Ticker", "Company", "Sector", "Overall Quant Score", "Investment Score",
         "Opportunity Score", "Position Trade Score", "Health Score", "Expected Return Score", "Conviction Score", "Evidence Score", "Research Priority",
@@ -2654,9 +2698,16 @@ def opportunity_engine():
     df = load_sp500_scores()
     tab_saved, tab_scan = st.tabs(["Saved Quant Scan", "Run / Update Quant Scan"])
     with tab_scan:
-        tickers = get_sp500_tickers()
-        scan_size = st.slider("How many stocks to scan", 10, min(500, len(tickers)), 50)
-        st.warning("A full 500-stock scan can take a while. Start with 50–100 if testing.")
+        st.write("Scan the **full S&P 500** — target a sector to keep each scan fast and within the FMP daily quota. Scans **merge** into your saved data, so you can build full coverage a sector at a time.")
+        chosen_sectors = st.multiselect(
+            "Sectors to scan (leave empty for all 500)", sp500_sectors(),
+            help="Scanning one or two sectors at a time is the best way to build full coverage on the free data tier.",
+        )
+        tickers = tickers_for_sectors(chosen_sectors)
+        max_n = max(10, len(tickers))
+        scan_size = st.slider("How many stocks to scan", 10, min(500, max_n), min(50, max_n))
+        st.caption(f"{len(tickers)} names available in the selected universe. Scanning the first {scan_size}.")
+        st.warning("A large scan takes time and burns FMP quota (free tier = 250 calls/day, ~4 per stock). Start with one sector.")
         if st.button("Run Quant Scan and Save", type="primary"):
             with st.spinner("Running deeper quant scan..."):
                 new_df, failures = score_many(tickers[:scan_size])
