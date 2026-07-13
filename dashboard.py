@@ -1308,6 +1308,91 @@ def _fmp_get(path):
     return None
 
 
+def _fmp_get_list(path):
+    """Like _fmp_get but returns the full list (for multi-row endpoints like annual ratios).
+    Disk-cached ~20h."""
+    key = _get_secret("FMP_API_KEY")
+    if not key:
+        return None
+    ck = f"fmplist::{path}"
+    cached = _disk_get_json(ck, FMP_CACHE_TTL)
+    if cached is not None:
+        return cached
+    sep = "&" if "?" in path else "?"
+    url = f"{FMP_BASE}/{path}{sep}apikey={key}"
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=20) as r:
+                data = json.loads(r.read().decode())
+            if isinstance(data, list) and data:
+                _disk_set_json(ck, data)
+                return data
+            return None
+        except Exception:
+            time.sleep(1.0 * (attempt + 1))
+    return None
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def get_valuation_history(ticker):
+    """5-year P/E history from FMP annual ratios → is the stock cheap vs its OWN history?"""
+    data = _fmp_get_list(f"ratios?symbol={ticker}&period=annual&limit=6")
+    if not data:
+        return None
+    pts = []
+    for x in data:
+        yr = x.get("fiscalYear") or str(x.get("date", ""))[:4]
+        pe = safe_float(x.get("priceToEarningsRatio"))
+        if yr and pe and pe > 0:
+            pts.append((str(yr), round(pe, 1)))
+    if len(pts) < 3:
+        return None
+    pts = sorted(pts)
+    pes = [p for _, p in pts]
+    return {"points": pts, "avg_pe": round(sum(pes) / len(pes), 1),
+            "min_pe": round(min(pes), 1), "max_pe": round(max(pes), 1)}
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def get_ownership_activity(ticker):
+    """Institutional/insider ownership + recent insider buying vs selling (Yahoo, free)."""
+    out = {"inst_pct": None, "insider_pct": None, "inst_count": None,
+           "insider_buys": 0, "insider_sells": 0, "insider_net_shares": 0}
+    try:
+        t = yf.Ticker(ticker)
+        try:
+            mh = t.major_holders
+            if mh is not None and "Value" in mh.columns:
+                def g(k):
+                    return safe_float(mh.loc[k, "Value"]) if k in mh.index else None
+                out["inst_pct"] = g("institutionsPercentHeld")
+                out["insider_pct"] = g("insidersPercentHeld")
+                out["inst_count"] = g("institutionsCount")
+        except Exception:
+            pass
+        try:
+            it = t.insider_transactions
+            if it is not None and not it.empty and "Transaction" in it.columns:
+                cutoff = datetime.now() - timedelta(days=180)
+                recent = it
+                if "Start Date" in it.columns:
+                    recent = it[pd.to_datetime(it["Start Date"], errors="coerce") >= cutoff]
+                for _, r in recent.iterrows():
+                    txt = str(r.get("Transaction", "")).lower()
+                    sh = safe_float(r.get("Shares"), 0) or 0
+                    if "purchase" in txt or "buy" in txt:
+                        out["insider_buys"] += 1
+                        out["insider_net_shares"] += sh
+                    elif "sale" in txt or "sold" in txt or "sell" in txt:
+                        out["insider_sells"] += 1
+                        out["insider_net_shares"] -= sh
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return out
+
+
 def fetch_fmp_fundamentals(ticker):
     """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
     DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
@@ -3448,6 +3533,35 @@ def stock_deep_dive():
                 st.caption(f"How each method votes → {row.get('Valuation Methods', 'N/A')}")
             else:
                 st.info(f"Fair value estimate: {money(row['Fair Value'])}. Margin of safety: {row['Margin of Safety %']}%.")
+
+            st.divider()
+            st.markdown("### Valuation vs. its own history")
+            st.caption("Is the stock cheap relative to *itself*? Comparing today's P/E to its own multi-year average is a classic mean-reversion check.")
+            vh = get_valuation_history(ticker)
+            cur_pe = safe_float(row.get("P/E"))
+            if not vh or not cur_pe:
+                st.info("Not enough P/E history available for this ticker.")
+            else:
+                avg = vh["avg_pe"]
+                vc1, vc2, vc3 = st.columns(3)
+                vc1.metric("Current P/E", f"{cur_pe:.1f}")
+                vc2.metric("5-yr avg P/E", f"{avg:.1f}")
+                disc = (cur_pe - avg) / avg * 100 if avg else 0
+                vc3.metric("vs. own history", f"{disc:+.0f}%", delta=f"{-disc:+.0f}%")
+                if cur_pe < avg * 0.85:
+                    st.success(f"🟢 Trading **below** its own 5-yr average P/E ({cur_pe:.1f} vs {avg:.1f}) — cheaper than its own norm (range {vh['min_pe']}–{vh['max_pe']}).")
+                elif cur_pe > avg * 1.15:
+                    st.warning(f"🔴 Trading **above** its own 5-yr average P/E ({cur_pe:.1f} vs {avg:.1f}) — richer than its own norm.")
+                else:
+                    st.info(f"Roughly in line with its own 5-yr average P/E ({cur_pe:.1f} vs {avg:.1f}).")
+                hist_fig = go.Figure(go.Bar(x=[y for y, _ in vh["points"]], y=[p for _, p in vh["points"]],
+                                            marker_color="#2b6f63", name="Annual P/E"))
+                hist_fig.add_hline(y=cur_pe, line_dash="dash", line_color=ACCENT,
+                                   annotation_text="current", annotation_font_color=ACCENT)
+                hist_fig.update_yaxes(title="P/E", gridcolor=CHART_GRID)
+                hist_fig.update_xaxes(gridcolor=CHART_GRID)
+                st.plotly_chart(_style_fig(hist_fig, height=300), width="stretch")
+                st.caption("⚠️ 'Cheap vs its own history' only helps if the business hasn't deteriorated — a falling multiple can be justified. Cross-check with the 5-year trends tab.")
         with tab3:
             st.subheader("Quality + Health")
             health_df = pd.DataFrame([
@@ -3590,6 +3704,22 @@ def stock_deep_dive():
                     + f"  (fwd EPS {money(fwd_eps)} × {fair_pe}x)"
                 )
                 st.caption("This uses analysts' *forward* EPS instead of trailing earnings — a future-facing complement to the engine's trailing DCF. Both are estimates; agreement between them is the encouraging case.")
+
+            st.divider()
+            st.markdown("### Smart-money activity")
+            st.caption("Who owns it, and are insiders buying or selling? Insider *buying* is a mild positive signal (they know the business); selling is noisier (often just diversification).")
+            own = get_ownership_activity(ticker)
+            o1, o2, o3 = st.columns(3)
+            o1.metric("Institutional ownership", f"{own['inst_pct']*100:.0f}%" if own.get("inst_pct") is not None else "N/A",
+                      f"{int(own['inst_count'])} holders" if own.get("inst_count") else None)
+            o2.metric("Insider ownership", f"{own['insider_pct']*100:.1f}%" if own.get("insider_pct") is not None else "N/A")
+            buys, sells = own.get("insider_buys", 0), own.get("insider_sells", 0)
+            o3.metric("Insider trades (6mo)", f"{buys} buys / {sells} sells")
+            if buys or sells:
+                if buys > sells:
+                    st.success(f"🟢 Net insider **buying** over the last 6 months ({buys} buys vs {sells} sells) — insiders putting money in is a mild positive.")
+                elif sells > buys * 2 and sells >= 3:
+                    st.caption(f"Insiders net sellers ({sells} sells vs {buys} buys) — common and often just diversification/comp, but worth noting.")
         with tab4:
             st.subheader("Momentum + Why Moving")
             if move:
@@ -4076,6 +4206,87 @@ STRATEGY_PRESETS = {
 }
 
 
+def daily_briefing_page():
+    st.title("🏠 Daily Briefing")
+    st.caption("Your one-glance start: market mood, what's moving on your watchlist, earnings ahead, and fresh opportunities.")
+
+    # --- Market mood ---
+    try:
+        snapshot = get_market_snapshot()
+        health, regime = get_market_health(snapshot)
+    except Exception:
+        snapshot, health, regime = [], 50, "Unknown"
+    m = st.columns(4)
+    m[0].metric("Market Health", f"{health}/100", regime)
+    if snapshot:
+        sd = pd.DataFrame(snapshot).sort_values("Change %", ascending=False)
+        for i, (_, r) in enumerate(sd.head(3).iterrows()):
+            m[i + 1].metric(r["Asset"], money(r["Price"]), f"{r['Change %']}%")
+
+    scan = load_sp500_scores()
+    scan = enhance_research_columns(scan) if not scan.empty else scan
+    if not scan.empty:
+        scan = add_score_change(scan)
+    wl = load_watchlist()
+
+    st.divider()
+    left, right = st.columns([1.1, 1])
+
+    with left:
+        st.subheader("📋 Your Watchlist")
+        if not wl:
+            st.info("No watchlist yet — add names on the **My Watchlist** page and they'll appear here.")
+        elif scan.empty:
+            st.info("Run a scan so your watchlist names have fresh scores.")
+        else:
+            wl_rows = scan[scan["Ticker"].astype(str).str.upper().isin(wl)]
+            if wl_rows.empty:
+                st.caption("Your watchlist names aren't in the latest scan yet — scan their sectors to see them here.")
+            else:
+                # Alerts firing
+                any_alert = False
+                for _, r in wl_rows.sort_values("Conviction Score", ascending=False).iterrows():
+                    fired = compute_alerts(r)
+                    if fired:
+                        any_alert = True
+                        st.markdown(f"**{r['Ticker']}** — " + "  ".join(f"{e} {msg}" for e, msg in fired[:3]))
+                if not any_alert:
+                    st.caption("No alerts firing on your watchlist right now.")
+                # Biggest conviction moves
+                if "Conviction Change" in wl_rows.columns:
+                    movers = wl_rows.reindex(wl_rows["Conviction Change"].abs().sort_values(ascending=False).index).head(3)
+                    movers = movers[movers["Conviction Change"].abs() >= 1]
+                    if not movers.empty:
+                        st.caption("**Biggest conviction moves since last scan:**")
+                        for _, r in movers.iterrows():
+                            st.caption(f"  {r['Ticker']}: {r['Conviction Change']:+.0f} → {r['Conviction Score']:.0f}/100")
+
+        # Earnings this week
+        if wl:
+            soon = []
+            for t in wl:
+                d0 = get_next_earnings(t)
+                if d0:
+                    days = (pd.to_datetime(d0) - pd.to_datetime(today_string())).days
+                    if 0 <= days <= 7:
+                        soon.append((t, d0, days))
+            if soon:
+                st.warning("📅 **Reporting this week:** " + ", ".join(f"{t} ({d0})" for t, d0, _ in sorted(soon, key=lambda x: x[2])))
+
+    with right:
+        st.subheader("🔎 Fresh Opportunities")
+        if scan.empty:
+            st.info("Run a scan in the Quant Opportunity Engine to populate this.")
+        else:
+            top = scan.sort_values("Research Priority", ascending=False).head(6)
+            for _, r in top.iterrows():
+                st.markdown(f"**{r['Ticker']}** — {r.get('Company','')}")
+                st.caption(f"Priority {r.get('Research Priority','?')} · conviction {r.get('Conviction Score','?')}/100 · {r.get('Sector','')} · {r.get('Research Action','')}")
+
+    st.divider()
+    st.caption("Tip: this page reads your saved scan + watchlist. Keep the daily scans running (they do, automatically) and it stays current.")
+
+
 def research_journal_page():
     st.title("Research Journal")
     st.caption("Write down *why* you're interested before you buy — then revisit it later. Disciplined investors keep a thesis; it's how you learn whether your reasoning (not just luck) was right.")
@@ -4469,14 +4680,16 @@ def main():
     app_header()
     page = st.sidebar.radio(
         "Choose Page",
-        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Research Journal", "Backtesting Lab", "Learning Center"]
+        ["🏠 Daily Briefing", "Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Research Journal", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
     st.sidebar.write("**Master Scores:** Investment, Opportunity, Position Trade, Health, Expected Return")
     st.sidebar.write("**Focus:** Undervalued + growth + quality + momentum + risk control")
 
-    if page == "Market Command Center":
+    if page == "🏠 Daily Briefing":
+        daily_briefing_page()
+    elif page == "Market Command Center":
         market_command_center()
     elif page == "My Watchlist":
         watchlist_page()
