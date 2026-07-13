@@ -236,6 +236,7 @@ SP500_CACHE = APP_DIR / "sp500_quant_scores.csv"
 SP500_HISTORY = APP_DIR / "sp500_quant_score_history.csv"
 PORTFOLIO_FILE = APP_DIR / "portfolio_manager_ai.csv"
 WATCHLIST_FILE = APP_DIR / "watchlist.csv"
+JOURNAL_FILE = APP_DIR / "research_journal.csv"
 
 # Load a local .env (for OPENAI_API_KEY etc.) if present. Safe no-op if the file/lib is missing.
 try:
@@ -2473,6 +2474,48 @@ def save_watchlist(tickers):
     return clean
 
 
+JOURNAL_COLS = ["Ticker", "My Rating", "My Target", "Thesis", "Notes", "Updated"]
+
+
+def load_journal():
+    if JOURNAL_FILE.exists():
+        try:
+            df = pd.read_csv(JOURNAL_FILE)
+            for c in JOURNAL_COLS:
+                if c not in df.columns:
+                    df[c] = ""
+            return df[JOURNAL_COLS].fillna("")
+        except Exception:
+            pass
+    return pd.DataFrame(columns=JOURNAL_COLS)
+
+
+def save_journal_entry(ticker, rating, target, thesis, notes):
+    ticker = str(ticker).upper().strip()
+    if not ticker:
+        return
+    df = load_journal()
+    df = df[df["Ticker"] != ticker]   # replace any existing entry for this ticker
+    new = pd.DataFrame([{
+        "Ticker": ticker, "My Rating": rating, "My Target": target,
+        "Thesis": thesis, "Notes": notes, "Updated": today_string(),
+    }])
+    df = pd.concat([new, df], ignore_index=True)
+    try:
+        df.to_csv(JOURNAL_FILE, index=False)
+    except Exception:
+        pass
+
+
+def delete_journal_entry(ticker):
+    df = load_journal()
+    df = df[df["Ticker"] != str(ticker).upper().strip()]
+    try:
+        df.to_csv(JOURNAL_FILE, index=False)
+    except Exception:
+        pass
+
+
 def compute_alerts(row):
     """Return a list of (emoji, message) alerts currently triggered for a scored stock.
     These are evaluated whenever you view the watchlist — 'what needs my attention now'."""
@@ -3969,6 +4012,83 @@ STRATEGY_PRESETS = {
 }
 
 
+def research_journal_page():
+    st.title("Research Journal")
+    st.caption("Write down *why* you're interested before you buy — then revisit it later. Disciplined investors keep a thesis; it's how you learn whether your reasoning (not just luck) was right.")
+
+    journal = load_journal()
+    existing_tickers = journal["Ticker"].tolist() if not journal.empty else []
+
+    with st.expander("✍️ Add / edit an entry", expanded=True):
+        ticker = st.text_input("Ticker", "").upper().strip()
+        prefill = {}
+        if ticker and ticker in existing_tickers:
+            prefill = journal[journal["Ticker"] == ticker].iloc[0].to_dict()
+            st.caption(f"Editing existing entry (last updated {prefill.get('Updated','')}).")
+
+        # light context from the saved scan (free — no API call)
+        if ticker:
+            scan = load_sp500_scores()
+            if not scan.empty and ticker in scan["Ticker"].astype(str).str.upper().values:
+                r = scan[scan["Ticker"].astype(str).str.upper() == ticker].iloc[0]
+                st.caption(f"📊 Engine snapshot: {ticker} · price {money(r.get('Price'))} · fair value {money(r.get('Fair Value'))} · conviction {r.get('Conviction Score','?')}/100 · {r.get('Tier','')}")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            ratings = ["", "Buy", "Accumulate", "Watch", "Pass", "Sell"]
+            cur_rating = prefill.get("My Rating", "")
+            rating = st.selectbox("My rating", ratings, index=ratings.index(cur_rating) if cur_rating in ratings else 0)
+        with c2:
+            target = st.text_input("My price target (optional)", str(prefill.get("My Target", "") or ""))
+        thesis = st.text_area("Thesis — why is this interesting? (bull case, catalysts, what has to go right)",
+                              str(prefill.get("Thesis", "") or ""), height=120)
+        notes = st.text_area("Ongoing notes — risks, updates, what would change your mind",
+                             str(prefill.get("Notes", "") or ""), height=120)
+        if st.button("💾 Save entry", type="primary"):
+            if not ticker:
+                st.warning("Enter a ticker first.")
+            else:
+                save_journal_entry(ticker, rating, target, thesis, notes)
+                st.success(f"Saved journal entry for {ticker}.")
+                st.rerun()
+
+    st.divider()
+    journal = load_journal()
+    if journal.empty:
+        st.info("No journal entries yet. Add your first thesis above.")
+        return
+
+    st.subheader(f"Your journal ({len(journal)} entries)")
+    for _, e in journal.iterrows():
+        header = f"**{e['Ticker']}**" + (f" — {e['My Rating']}" if e['My Rating'] else "") + (f" · target {e['My Target']}" if str(e['My Target']).strip() else "")
+        with st.container(border=True):
+            st.markdown(f"{header}  \n<span style='color:#8a94a6;font-size:0.85rem'>updated {e['Updated']}</span>", unsafe_allow_html=True)
+            if str(e["Thesis"]).strip():
+                st.markdown(f"**Thesis:** {e['Thesis']}")
+            if str(e["Notes"]).strip():
+                st.markdown(f"**Notes:** {e['Notes']}")
+            if st.button("🗑️ Delete", key=f"del_{e['Ticker']}"):
+                delete_journal_entry(e["Ticker"])
+                st.rerun()
+
+    st.divider()
+    st.caption("💾 Journal is saved on this device. On the cloud it resets on reboot — use Export to back it up, Import to restore.")
+    b1, b2 = st.columns(2)
+    with b1:
+        st.download_button("⬇️ Export journal (CSV)", data=journal.to_csv(index=False).encode(),
+                           file_name="research_journal.csv", mime="text/csv")
+    with b2:
+        up = st.file_uploader("⬆️ Import journal (CSV)", type="csv", label_visibility="collapsed")
+        if up is not None and st.button("Restore from file"):
+            try:
+                imp = pd.read_csv(up)
+                imp.to_csv(JOURNAL_FILE, index=False)
+                st.success("Journal restored.")
+                st.rerun()
+            except Exception as ex:
+                st.error(f"Couldn't import: {ex}")
+
+
 def position_sizer_page():
     st.title("Position Sizer")
     st.caption("The bridge from research to action: given your capital and risk rules, how much of a stock should you actually buy? Position sizing — not stock picking — is what keeps you in the game.")
@@ -4285,7 +4405,7 @@ def main():
     app_header()
     page = st.sidebar.radio(
         "Choose Page",
-        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Backtesting Lab", "Learning Center"]
+        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Research Journal", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
@@ -4314,6 +4434,8 @@ def main():
         valuation_lab_page()
     elif page == "Strategy Builder":
         strategy_builder_page()
+    elif page == "Research Journal":
+        research_journal_page()
     elif page == "Backtesting Lab":
         backtesting_page()
     else:
