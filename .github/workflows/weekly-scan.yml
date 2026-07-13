@@ -1,13 +1,13 @@
-name: Weekly Quant Scan
+name: Daily Quant Scan
 
-# Runs the quant scan on a schedule and commits fresh scores + a dated history snapshot
-# back to the repo. Streamlit Cloud auto-redeploys on the new commit, so the live app
-# always shows current data — and the honest backtest gains a new point-in-time snapshot
-# every week, building a real track record automatically.
+# Runs every weekday, scanning a rotating chunk of the S&P 500 (run_scan.py picks the slice
+# by calendar day) so the whole index is refreshed roughly every two weeks within the FMP
+# free-tier quota. Commits fresh scores + a dated history snapshot; Streamlit Cloud
+# auto-redeploys, and the backtest/efficacy tools gain steady point-in-time data.
 
 on:
   schedule:
-    - cron: "0 13 * * 1"     # Every Monday 13:00 UTC (~9am ET / 6am PT)
+    - cron: "0 13 * * 1-5"   # Weekdays 13:00 UTC (~9am ET / 6am PT)
   workflow_dispatch: {}        # Also lets you run it manually from the Actions tab
 
 permissions:

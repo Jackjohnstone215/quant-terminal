@@ -6,7 +6,7 @@ name: Accuracy Audit
 
 on:
   schedule:
-    - cron: "0 13 * * 5"     # Fridays 13:00 UTC
+    - cron: "0 13 * * 6"     # Saturdays 13:00 UTC (own day so it never competes with the weekday scans for FMP quota)
   workflow_dispatch: {}
 
 permissions:
