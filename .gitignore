@@ -7,6 +7,9 @@ portfolio_manager_ai.csv
 watchlist.csv
 research_journal.csv
 
+# --- Local data cache ---
+.data_cache/
+
 # --- Python ---
 .venv/
 __pycache__/

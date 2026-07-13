@@ -7,6 +7,7 @@ from pathlib import Path
 import math
 import time
 import os
+import io
 import json
 import urllib.request
 import urllib.error
@@ -1207,13 +1208,65 @@ def get_spy_history():
     return pd.DataFrame()
 
 
+# ----- Lightweight on-disk cache (persists fetched data across sessions/re-scans) -----
+CACHE_DIR = APP_DIR / ".data_cache"
+FMP_CACHE_TTL = 20 * 3600      # fundamentals don't change intraday
+HIST_CACHE_TTL = 12 * 3600     # daily prices
+
+
+def _cache_file(key, ext="json"):
+    safe = "".join(c if c.isalnum() else "_" for c in key)[:120]
+    return CACHE_DIR / f"{safe}.{ext}"
+
+
+def _disk_get_json(key, ttl):
+    try:
+        p = _cache_file(key)
+        if p.exists() and (time.time() - p.stat().st_mtime) < ttl:
+            return json.loads(p.read_text())
+    except Exception:
+        pass
+    return None
+
+
+def _disk_set_json(key, value):
+    try:
+        CACHE_DIR.mkdir(exist_ok=True)
+        _cache_file(key).write_text(json.dumps(value))
+    except Exception:
+        pass
+
+
+def clear_data_cache():
+    n = 0
+    try:
+        if CACHE_DIR.exists():
+            for f in CACHE_DIR.iterdir():
+                f.unlink()
+                n += 1
+    except Exception:
+        pass
+    return n
+
+
 def _yf_history(ticker, period="2y"):
-    """Fetch price history from Yahoo with retries. Prices are the reliable part of the
-    free Yahoo feed, so we keep using it even when fundamentals come from FMP."""
+    """Fetch price history from Yahoo (reliable, free) with retries + a short disk cache
+    so repeated scans/deep-dives don't re-download the same daily prices."""
+    ck = f"hist::{ticker}::{period}"
+    cached = _disk_get_json(ck, HIST_CACHE_TTL)
+    if cached is not None:
+        try:
+            return pd.read_json(io.StringIO(cached), orient="split")
+        except Exception:
+            pass
     for attempt in range(3):
         try:
             hist = yf.Ticker(ticker).history(period=period)
             if hist is not None and not hist.empty:
+                try:
+                    _disk_set_json(ck, hist.to_json(orient="split"))
+                except Exception:
+                    pass
                 return hist
         except Exception:
             time.sleep(1.0 * (attempt + 1))
@@ -1229,10 +1282,15 @@ def fmp_available():
 
 
 def _fmp_get(path):
-    """Call one FMP 'stable' endpoint, return the first record (dict) or None."""
+    """Call one FMP 'stable' endpoint, return the first record (dict) or None. Successful
+    responses are disk-cached for ~20h so re-scans are instant and don't burn API quota."""
     key = _get_secret("FMP_API_KEY")
     if not key:
         return None
+    ck = f"fmp::{path}"
+    cached = _disk_get_json(ck, FMP_CACHE_TTL)
+    if cached is not None:
+        return cached
     sep = "&" if "?" in path else "?"
     url = f"{FMP_BASE}/{path}{sep}apikey={key}"
     for attempt in range(3):
@@ -1241,7 +1299,10 @@ def _fmp_get(path):
                 data = json.loads(r.read().decode())
             if isinstance(data, dict) and (data.get("Error Message") or data.get("error")):
                 return None
-            return data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+            result = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+            if result is not None:
+                _disk_set_json(ck, result)   # only cache real successes, so failures retry
+            return result
         except Exception:
             time.sleep(1.0 * (attempt + 1))
     return None
@@ -3174,6 +3235,9 @@ def opportunity_engine():
         scan_size = st.slider("How many stocks to scan", 10, min(500, max_n), min(50, max_n))
         st.caption(f"{len(tickers)} names available in the selected universe. Scanning the first {scan_size}.")
         st.warning("A large scan takes time and burns FMP quota (free tier = 250 calls/day, ~4 per stock). Start with one sector.")
+        st.caption("⚡ Fetched data is cached on disk (~20h) — re-scanning the same names is fast and free. Clear the cache to force fresh data.")
+        if st.button("🧹 Clear data cache"):
+            st.success(f"Cleared {clear_data_cache()} cached files. Next scan pulls fresh data.")
         if st.button("Run Quant Scan and Save", type="primary"):
             with st.spinner("Running deeper quant scan..."):
                 new_df, failures = score_many(tickers[:scan_size])
