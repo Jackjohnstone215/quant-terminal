@@ -3502,6 +3502,33 @@ def stock_deep_dive():
             st.write(f"**Main concerns:** {row['Main Concerns']}")
             st.write(f"**Biggest risk:** {row['Biggest Risk']}")
             st.write(f"**Alerts:** {row['Alerts']}")
+
+            st.divider()
+            st.markdown("### How it compares to sector peers")
+            scan_peers = load_sp500_scores()
+            if scan_peers.empty:
+                st.caption("Run a scan to compare against sector peers.")
+            else:
+                scan_peers = enhance_research_columns(scan_peers)
+                sector = row.get("Sector")
+                peers = scan_peers[scan_peers["Sector"] == sector].copy()
+                peers = peers[peers["Ticker"].astype(str).str.upper() != str(row["Ticker"]).upper()]
+                combined = pd.concat([peers, pd.DataFrame([row])], ignore_index=True)
+                if len(combined) < 3:
+                    st.caption(f"Not enough scanned **{sector}** names yet to compare — scan that sector to unlock peer comparison.")
+                else:
+                    combined = combined.sort_values("Overall Quant Score", ascending=False).reset_index(drop=True)
+                    rank = combined.index[combined["Ticker"].astype(str).str.upper() == str(row["Ticker"]).upper()][0] + 1
+                    n = len(combined)
+                    # valuation rank (higher Valuation Score = cheaper)
+                    val_sorted = combined.sort_values("Valuation Score", ascending=False).reset_index(drop=True)
+                    val_rank = val_sorted.index[val_sorted["Ticker"].astype(str).str.upper() == str(row["Ticker"]).upper()][0] + 1
+                    st.write(f"**{row['Ticker']}** ranks **#{rank} of {n}** in {sector} by Overall Quant Score, and **#{val_rank} of {n}** on valuation (cheapness).")
+                    pcols = ["Ticker", "Company", "Overall Quant Score", "Conviction Score",
+                             "Valuation Score", "Quality Score", "Growth Score", "P/E", "Upside %"]
+                    peer_view = combined[[c for c in pcols if c in combined.columns]].head(10)
+                    st.dataframe(peer_view, width="stretch")
+                    st.caption("Same-sector comparison from your latest scan (this stock included). Higher Valuation Score = cheaper vs peers.")
         with tab2:
             st.subheader("Valuation + Cash Flow")
             val_df = pd.DataFrame([
