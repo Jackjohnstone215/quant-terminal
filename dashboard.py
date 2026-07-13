@@ -1393,6 +1393,81 @@ def get_ownership_activity(ticker):
     return out
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def get_dividend_growth(ticker):
+    """Dividend growth streak (consecutive up years) from Yahoo dividend history (free)."""
+    out = {"streak": 0, "years": 0, "last_annual": None, "cut": False}
+    try:
+        divs = yf.Ticker(ticker).dividends
+        if divs is None or len(divs) == 0:
+            return out
+        ann = divs.groupby(divs.index.year).sum()
+        # Drop the current calendar year — it's only partially paid, so its sum would look
+        # like a "cut" vs the prior full year and wreck the streak/cut logic.
+        this_year = datetime.now().year
+        ann = ann[ann.index < this_year]
+        vals = [float(v) for v in ann.values]
+        out["years"] = len(vals)
+        out["last_annual"] = round(vals[-1], 2) if vals else None
+        streak = 0
+        for i in range(len(vals) - 1, 0, -1):
+            if vals[i] > vals[i - 1] * 1.001:
+                streak += 1
+            else:
+                break
+        out["streak"] = streak
+        # Only flag a cut in the last ~10 full years — older yfinance data has split/coverage
+        # artifacts that create false "cuts" for decades-long payers.
+        recent = vals[-11:]
+        out["cut"] = any(recent[i] < recent[i - 1] * 0.9 for i in range(1, len(recent)))
+    except Exception:
+        pass
+    return out
+
+
+def dividend_safety(row, growth):
+    """Standard dividend-safety read: can the company comfortably keep paying?
+    Blends payout coverage, cash-flow support, balance-sheet strength, and growth history.
+    Returns None for non-payers. (Standard public methodology — not any firm's proprietary model.)"""
+    yld = safe_float(row.get("Dividend Yield %"), 0)
+    if not yld or yld <= 0:
+        return None
+    payout = safe_float(row.get("Payout Ratio %"))
+    ndte = safe_float(row.get("Net Debt/EBITDA"))
+    cf_score = safe_float(row.get("Cash Flow Score"), 50)
+
+    # Payout coverage (lower payout = safer). Negative/над-100% payout is a red flag.
+    if payout is None:
+        payout_pts = 50
+    elif payout < 0:
+        payout_pts = 5
+    else:
+        payout_pts = clamp(105 - payout)          # 40%→65, 60%→45, 80%→25, 100%→5
+    # Balance sheet (lower net debt/EBITDA = safer)
+    debt_pts = clamp(100 - (ndte * 20)) if ndte is not None else 50   # 0→100, 2.5→50, 5→0
+    # Cash-flow support
+    cf_pts = clamp(cf_score)
+    # Growth history
+    streak = growth.get("streak", 0)
+    growth_pts = clamp(45 + streak * 9)
+    if growth.get("cut"):
+        growth_pts = min(growth_pts, 30)          # a past cut is a serious mark
+
+    score = round(payout_pts * 0.35 + cf_pts * 0.30 + debt_pts * 0.20 + growth_pts * 0.15, 0)
+    if score >= 75:
+        verdict = "🟢 Very Safe"
+    elif score >= 60:
+        verdict = "🟢 Safe"
+    elif score >= 45:
+        verdict = "🟡 Moderate"
+    else:
+        verdict = "🔴 At Risk"
+    return {"score": score, "verdict": verdict, "yield": yld, "payout": payout,
+            "ndte": ndte, "cf_score": cf_score, "streak": streak, "cut": growth.get("cut"),
+            "components": {"Payout coverage": round(payout_pts), "Cash-flow support": round(cf_pts),
+                           "Balance sheet": round(debt_pts), "Growth history": round(growth_pts)}}
+
+
 def fetch_fmp_fundamentals(ticker):
     """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
     DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
@@ -3150,6 +3225,29 @@ def portfolio_manager_page():
                 st.markdown("**How your holdings move together** (green = independent, red = move in lockstep)")
                 st.plotly_chart(heat, width="stretch")
 
+            st.divider()
+            st.subheader("🌩️ Stress Test")
+            st.caption("How would your portfolio move if the market did? Estimated via your portfolio beta (sensitivity to market moves) — standard scenario analysis.")
+            beta = risk.get("weighted_beta")
+            if beta is None:
+                st.caption("Need holding betas to run scenarios.")
+            else:
+                scenarios = [("Severe crash", -30), ("Bear market", -20), ("Correction", -10),
+                             ("Pullback", -5), ("Rally", 10), ("Strong rally", 20)]
+                srows = []
+                for name, mkt in scenarios:
+                    port = beta * mkt                      # CAPM-style: portfolio move ≈ beta × market move
+                    srows.append({
+                        "Scenario": f"{name} ({mkt:+d}%)",
+                        "Est. Portfolio Move %": round(port, 1),
+                        "Est. Value Change": money(total_value * port / 100),
+                        "Portfolio Value After": money(total_value * (1 + port / 100)),
+                    })
+                st.dataframe(pd.DataFrame(srows), width="stretch")
+                worst = total_value * (beta * -30) / 100
+                st.warning(f"In a severe (−30%) market, this portfolio (beta {beta}) could fall ~{money(abs(worst))} ({beta*-30:.0f}%). Make sure that's a loss you could stomach and hold through.")
+                st.caption("⚠️ Simplified: assumes moves scale with beta and ignores stock-specific news, correlations breaking down in crises, and that high-beta names often fall *more* than beta predicts in real crashes. A planning aid, not a forecast.")
+
     with tab2:
         st.subheader("New Money Allocator")
         invest_amount = st.number_input("Amount you want to invest", min_value=0.0, value=1000.0, step=100.0)
@@ -3633,6 +3731,29 @@ def stock_deep_dive():
                     st.plotly_chart(margins_trend_chart(tdf), width="stretch")
                 with st.expander("Year-by-year detail"):
                     st.dataframe(tdf.set_index("Year"), width="stretch")
+
+            st.divider()
+            st.markdown("### Dividend Safety")
+            ds = dividend_safety(row, get_dividend_growth(ticker))
+            if ds is None:
+                st.caption(f"{ticker} doesn't pay a meaningful dividend — nothing to assess here.")
+            else:
+                d1, d2, d3 = st.columns(3)
+                d1.metric("Dividend Safety", f"{ds['score']:.0f}/100", ds["verdict"])
+                d2.metric("Yield", f"{ds['yield']:.2f}%")
+                d3.metric("Payout ratio", f"{ds['payout']:.0f}%" if ds["payout"] is not None else "N/A",
+                          help="Share of earnings paid as dividends. Under ~60% is comfortable.")
+                render_score_bars(ds["components"])
+                bits = []
+                if ds["streak"]:
+                    bits.append(f"{ds['streak']} straight years of dividend growth")
+                if ds.get("cut"):
+                    bits.append("⚠️ has cut its dividend before")
+                if ds["ndte"] is not None:
+                    bits.append(f"net debt/EBITDA {ds['ndte']:.1f}")
+                if bits:
+                    st.caption(" · ".join(bits) + ".")
+                st.caption("Standard payout/cash-flow/balance-sheet methodology — the higher the score, the more comfortably the company can keep (and grow) the dividend.")
         with tab8:
             st.subheader("Analyst & Forward View")
             st.caption("Forward-looking Wall Street consensus (Yahoo Finance). Complements the engine's trailing-data valuation with what analysts expect ahead.")
