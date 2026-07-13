@@ -3871,6 +3871,73 @@ STRATEGY_PRESETS = {
 }
 
 
+def position_sizer_page():
+    st.title("Position Sizer")
+    st.caption("The bridge from research to action: given your capital and risk rules, how much of a stock should you actually buy? Position sizing — not stock picking — is what keeps you in the game.")
+
+    st.info("Research tool, not advice. Sizing controls risk; it doesn't make a bad idea good.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        capital = st.number_input("Total investable capital ($)", min_value=100.0, value=10000.0, step=500.0)
+        ticker = st.text_input("Ticker", "MSFT").upper().strip()
+        max_pos = st.slider("Max position size (% of capital)", 1, 50, 20,
+                            help="Your hard cap on any single name. 15–25% is common for a concentrated portfolio; 5–10% for a diversified one.")
+    with c2:
+        risk_per_trade = st.slider("Risk per trade (% of capital)", 0.5, 5.0, 1.0, 0.5,
+                                   help="Max you're willing to lose if the stop is hit. Pros risk ~0.5–2% per position.")
+        stop_pct = st.slider("Stop-loss distance (% below entry)", 5, 40, 15,
+                             help="How far the stock can fall before you'd exit. Wider stops = smaller position.")
+
+    if st.button("Calculate Position Size", type="primary"):
+        try:
+            with st.spinner("Loading stock data..."):
+                row = get_quant_score(ticker)
+        except Exception:
+            st.error(f"Couldn't load {ticker}. Check the symbol.")
+            return
+        price = safe_float(row.get("Price"))
+        if not price:
+            st.error("No price available for this ticker.")
+            return
+        conviction = safe_float(row.get("Conviction Score"), 50)
+        vol = safe_float(row.get("Volatility %"), 30)
+
+        # 1) Conviction- & volatility-adjusted target weight (risk-parity flavour)
+        conv_frac = clamp(conviction, 0, 100) / 100
+        vol_adj = max(0.4, min(1.3, 25.0 / vol)) if vol else 1.0     # target ~25% vol; riskier -> smaller
+        conv_pct = min(max_pos, max_pos * conv_frac * vol_adj)
+        conv_dollars = capital * conv_pct / 100
+        conv_shares = conv_dollars / price
+
+        # 2) Fixed-fractional risk sizing (from stop distance)
+        risk_dollars = capital * risk_per_trade / 100
+        risk_shares = risk_dollars / (price * stop_pct / 100)
+        risk_dollars_pos = risk_shares * price
+        capped = risk_dollars_pos > capital * max_pos / 100
+        if capped:
+            risk_dollars_pos = capital * max_pos / 100
+            risk_shares = risk_dollars_pos / price
+
+        recommended = min(conv_dollars, risk_dollars_pos)
+        rec_shares = recommended / price
+
+        st.subheader(f"{ticker} @ {money(price)}")
+        st.caption(f"Conviction {conviction:.0f}/100 · Volatility {vol:.0f}% · your max position {max_pos}% = {money(capital*max_pos/100)}")
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Conviction/vol sizing", money(conv_dollars), f"{conv_pct:.1f}% of capital")
+        m2.metric("Risk-based sizing", money(risk_dollars_pos), f"risk {money(risk_dollars)} at −{stop_pct}%")
+        m3.metric("✅ Suggested", money(recommended), f"≈ {rec_shares:.2f} shares")
+
+        st.success(f"**Suggested position: {money(recommended)}** (~{rec_shares:.2f} shares, {recommended/capital*100:.1f}% of capital). Taking the more conservative of the two methods.")
+
+        st.markdown("**How the two methods work:**")
+        st.write(f"- 🎯 **Conviction/volatility sizing** scales your max position by conviction ({conviction:.0f}/100) and shrinks it for volatility ({vol:.0f}%) → {conv_pct:.1f}% = {money(conv_dollars)}.")
+        st.write(f"- 🛡️ **Risk-based sizing** limits your loss to {risk_per_trade}% ({money(risk_dollars)}) if the stock falls {stop_pct}% to your stop → {money(risk_dollars_pos)}" + (" *(capped at your max position)*" if capped else "") + ".")
+        st.caption("Rule of thumb: size so that being wrong on any one name is survivable. The goal isn't to maximize a single bet — it's to stay in the game long enough for the process to work.")
+
+
 def strategy_builder_page():
     st.title("Strategy Builder")
     st.caption("Tune the engine to *your* style — set how much each factor matters and re-rank the whole scan instantly. No rescan needed; it recomputes from your saved data.")
@@ -4120,7 +4187,7 @@ def main():
     app_header()
     page = st.sidebar.radio(
         "Choose Page",
-        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Backtesting Lab", "Learning Center"]
+        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
@@ -4137,6 +4204,8 @@ def main():
         research_queue_page()
     elif page == "Portfolio Manager AI":
         portfolio_manager_page()
+    elif page == "Position Sizer":
+        position_sizer_page()
     elif page == "Quant Opportunity Engine":
         opportunity_engine()
     elif page == "Quant Stock Deep Dive":
