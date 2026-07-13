@@ -1072,6 +1072,45 @@ def get_analyst_data(ticker):
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
+def get_forward_signals(ticker):
+    """Forward-looking factors with real documented edge (Yahoo, free):
+    - estimate revisions momentum (analysts raising vs cutting next-year EPS)
+    - earnings-surprise track record (beat rate, avg & latest surprise -> drift)."""
+    out = {"rev_up": None, "rev_down": None, "rev_net": None, "rev_label": None,
+           "beat_rate": None, "avg_surprise": None, "last_surprise": None, "quarters": 0}
+    try:
+        t = yf.Ticker(ticker)
+        try:
+            er = t.eps_revisions
+            if er is not None and hasattr(er, "index"):
+                row = er.loc["+1y"] if "+1y" in er.index else er.iloc[-1]
+                up = safe_float(row.get("upLast30days"), 0) or 0
+                dn = safe_float(row.get("downLast30days"), 0) or 0
+                out["rev_up"], out["rev_down"], out["rev_net"] = up, dn, up - dn
+                out["rev_label"] = "Rising ⬆️" if up > dn else ("Falling ⬇️" if dn > up else "Flat →")
+        except Exception:
+            pass
+        try:
+            eh = t.earnings_history
+            if eh is not None and "surprisePercent" in eh.columns:
+                s = eh["surprisePercent"].dropna()
+                if len(s):
+                    # Cap each quarter to +/-100%: a near-zero estimate makes the raw
+                    # surprise % explode (e.g. est $0.01, actual $0.20 = 1900%), which is
+                    # mathematically real but meaningless. Beat rate uses the sign, so it's fine.
+                    sc = s.clip(-1.0, 1.0)
+                    out["quarters"] = int(len(s))
+                    out["beat_rate"] = round((s > 0).mean() * 100)
+                    out["avg_surprise"] = round(sc.mean() * 100, 1)
+                    out["last_surprise"] = round(max(-1.0, min(1.0, float(s.iloc[-1]))) * 100, 1)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return out
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
 def get_next_earnings(ticker):
     """Next earnings date (ISO string) for a ticker via Yahoo (free). None if unknown."""
     try:
@@ -3297,6 +3336,55 @@ def stock_deep_dive():
                         cheaper = "cheaper" if fpe < tpe else "richer"
                         st.caption(f"Forward P/E ({fpe:.1f}) is {cheaper} than trailing P/E ({tpe:.1f}) — analysts expect earnings to {'grow' if fpe < tpe else 'fall'}.")
                 st.caption("⚠️ Analyst targets are ~12-month price targets, tend to run optimistic, and reflect sentiment — treat as one input, not truth. When the engine and analysts disagree sharply, that's a flag to dig deeper.")
+
+            st.divider()
+            st.markdown("### Forward signals")
+            fs = get_forward_signals(ticker)
+            nxt = get_next_earnings(ticker)
+            f1, f2, f3 = st.columns(3)
+            # Estimate revisions momentum
+            if fs.get("rev_label"):
+                f1.metric("Estimate Revisions (30d)", fs["rev_label"],
+                          f"{int(fs['rev_up'])} up / {int(fs['rev_down'])} down")
+            else:
+                f1.metric("Estimate Revisions (30d)", "N/A")
+            # Earnings surprise track record
+            if fs.get("beat_rate") is not None:
+                f2.metric("Earnings Beat Rate", f"{fs['beat_rate']}%",
+                          f"avg surprise {fs['avg_surprise']:+.1f}% ({fs['quarters']}q)")
+            else:
+                f2.metric("Earnings Beat Rate", "N/A")
+            f3.metric("Next Earnings", nxt or "N/A")
+
+            # Plain-English reads (with honest caveats)
+            if fs.get("rev_net") is not None:
+                if fs["rev_net"] > 0:
+                    st.caption("🟢 Analysts are **raising** next-year EPS estimates — 'revisions momentum' is one of the more reliable forward signals (estimates tend to move in trends).")
+                elif fs["rev_net"] < 0:
+                    st.caption("🔴 Analysts are **cutting** next-year EPS estimates — a caution sign; downward revisions often continue.")
+            if fs.get("beat_rate") is not None and fs["beat_rate"] >= 75:
+                st.caption(f"🟢 Strong track record: beat estimates in ~{fs['beat_rate']}% of the last {fs['quarters']} quarters. Consistent beats can drift the stock up post-earnings (PEAD).")
+
+            # Forward-looking fair value (forward EPS x justified P/E)
+            fwd_eps = a.get("forward_eps")
+            if fwd_eps and fwd_eps > 0:
+                q, g = safe_float(row.get("Quality Score"), 50), safe_float(row.get("Growth Score"), 50)
+                fair_pe = 18
+                if q >= 80 and g >= 75:
+                    fair_pe = 30
+                elif q >= 70 and g >= 60:
+                    fair_pe = 24
+                elif q < 45:
+                    fair_pe = 14
+                fwd_fv = fwd_eps * fair_pe
+                fwd_up = (fwd_fv - price_now) / price_now * 100 if price_now else None
+                st.markdown("**Forward-looking fair value** (next-year EPS × a quality/growth-justified P/E):")
+                st.write(
+                    f"- 🔮 Forward fair value: **{money(fwd_fv)}**"
+                    + (f"  → {fwd_up:+.0f}% vs price" if fwd_up is not None else "")
+                    + f"  (fwd EPS {money(fwd_eps)} × {fair_pe}x)"
+                )
+                st.caption("This uses analysts' *forward* EPS instead of trailing earnings — a future-facing complement to the engine's trailing DCF. Both are estimates; agreement between them is the encouraging case.")
         with tab4:
             st.subheader("Momentum + Why Moving")
             if move:
