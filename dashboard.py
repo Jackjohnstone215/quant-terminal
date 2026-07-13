@@ -3852,6 +3852,82 @@ def etf_explorer_page():
             st.caption("Lower expense ratio and drawdown are better; compare returns *alongside* volatility, not alone.")
 
 
+STRATEGY_FACTORS = [
+    ("Quality Score", "Quality"), ("Valuation Score", "Valuation"), ("Growth Score", "Growth"),
+    ("Cash Flow Score", "Cash Flow"), ("Financial Strength Score", "Fin. Strength"),
+    ("Momentum Score", "Momentum"), ("Relative Strength Score", "Rel. Strength"), ("Risk Score", "Risk Control"),
+]
+STRATEGY_PRESETS = {
+    "Balanced": {"Quality Score": 6, "Valuation Score": 6, "Growth Score": 5, "Cash Flow Score": 5,
+                 "Financial Strength Score": 5, "Momentum Score": 4, "Relative Strength Score": 4, "Risk Score": 5},
+    "Value": {"Quality Score": 6, "Valuation Score": 10, "Growth Score": 3, "Cash Flow Score": 7,
+              "Financial Strength Score": 6, "Momentum Score": 2, "Relative Strength Score": 2, "Risk Score": 5},
+    "GARP (growth at a reasonable price)": {"Quality Score": 7, "Valuation Score": 6, "Growth Score": 8, "Cash Flow Score": 5,
+              "Financial Strength Score": 4, "Momentum Score": 4, "Relative Strength Score": 4, "Risk Score": 4},
+    "Quality Compounder": {"Quality Score": 10, "Valuation Score": 4, "Growth Score": 5, "Cash Flow Score": 8,
+              "Financial Strength Score": 7, "Momentum Score": 3, "Relative Strength Score": 3, "Risk Score": 5},
+    "Momentum": {"Quality Score": 4, "Valuation Score": 2, "Growth Score": 5, "Cash Flow Score": 3,
+              "Financial Strength Score": 3, "Momentum Score": 10, "Relative Strength Score": 9, "Risk Score": 2},
+}
+
+
+def strategy_builder_page():
+    st.title("Strategy Builder")
+    st.caption("Tune the engine to *your* style — set how much each factor matters and re-rank the whole scan instantly. No rescan needed; it recomputes from your saved data.")
+
+    df = load_sp500_scores()
+    if df.empty:
+        st.warning("No saved scan yet. Run a scan in the Quant Opportunity Engine first.")
+        return
+    df = enhance_research_columns(df)
+
+    for col, _ in STRATEGY_FACTORS:
+        st.session_state.setdefault(f"w_{col}", 5)
+
+    preset = st.selectbox("Start from a preset (then fine-tune)", list(STRATEGY_PRESETS))
+    if st.session_state.get("_last_preset") != preset:
+        for k, v in STRATEGY_PRESETS[preset].items():
+            st.session_state[f"w_{k}"] = v
+        st.session_state["_last_preset"] = preset
+
+    st.markdown("**Factor weights** (0 = ignore, 10 = maximum priority)")
+    cols = st.columns(4)
+    weights = {}
+    for i, (col, label) in enumerate(STRATEGY_FACTORS):
+        with cols[i % 4]:
+            weights[col] = st.slider(label, 0, 10, key=f"w_{col}")   # reads/writes session_state
+
+    total_w = sum(weights.values())
+    if total_w == 0:
+        st.info("Set at least one weight above zero.")
+        return
+
+    scored = df.copy()
+    scored["My Score"] = 0.0
+    for col, _ in STRATEGY_FACTORS:
+        if col in scored.columns:
+            scored["My Score"] += pd.to_numeric(scored[col], errors="coerce").fillna(50) * weights[col]
+    scored["My Score"] = (scored["My Score"] / total_w).round(1)
+
+    st.divider()
+    st.subheader(f"Top names by *your* strategy ({preset if st.session_state.get('_last_preset')==preset else 'custom'})")
+    show_cols = ["Ticker", "Company", "Sector", "My Score", "Overall Quant Score"] + [c for c, _ in STRATEGY_FACTORS]
+    ranked = scored.sort_values("My Score", ascending=False)
+    st.dataframe(ranked[[c for c in show_cols if c in ranked.columns]].head(25), width="stretch")
+
+    # Show how your ranking differs from the default engine ranking
+    ranked = ranked.reset_index(drop=True)
+    ranked["My Rank"] = ranked.index + 1
+    eng = scored.sort_values("Overall Quant Score", ascending=False).reset_index(drop=True)
+    eng_rank = {t: i + 1 for i, t in enumerate(eng["Ticker"])}
+    ranked["Engine Rank"] = ranked["Ticker"].map(eng_rank)
+    ranked["Rank Δ"] = ranked["Engine Rank"] - ranked["My Rank"]
+    movers = ranked.head(15).sort_values("Rank Δ", ascending=False)
+    st.caption("Biggest risers under your weights vs. the default engine ranking (positive = your strategy likes it more):")
+    st.dataframe(movers[["Ticker", "Company", "My Rank", "Engine Rank", "Rank Δ", "My Score"]].head(8), width="stretch")
+    st.caption("💡 Your Factor Efficacy tab can later tell you whether your custom blend would actually have predicted returns better than the default.")
+
+
 def valuation_lab_page():
     st.title("Valuation Lab")
     st.caption("See exactly how a discounted-cash-flow (DCF) valuation works — move the assumptions and watch fair value change. The best way to build intuition for what a stock is really worth.")
@@ -4044,7 +4120,7 @@ def main():
     app_header()
     page = st.sidebar.radio(
         "Choose Page",
-        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Backtesting Lab", "Learning Center"]
+        ["Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
@@ -4069,6 +4145,8 @@ def main():
         etf_explorer_page()
     elif page == "Valuation Lab":
         valuation_lab_page()
+    elif page == "Strategy Builder":
+        strategy_builder_page()
     elif page == "Backtesting Lab":
         backtesting_page()
     else:
