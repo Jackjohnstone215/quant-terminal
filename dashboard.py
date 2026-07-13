@@ -1071,6 +1071,73 @@ def get_analyst_data(ticker):
     return out
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def get_fundamental_trends(ticker):
+    """Multi-year (usually 4) annual fundamentals from Yahoo (free): revenue, margins, FCF,
+    EPS — so you can see whether the business is improving or decaying, not just a snapshot."""
+    try:
+        t = yf.Ticker(ticker)
+        inc = t.income_stmt
+        cf = t.cashflow
+        if inc is None or getattr(inc, "empty", True):
+            return None
+        years = [c.year for c in inc.columns]
+
+        def rowvals(df, name):
+            return df.loc[name].values if (df is not None and not getattr(df, "empty", True) and name in df.index) else [None] * len(years)
+
+        rev, gp = rowvals(inc, "Total Revenue"), rowvals(inc, "Gross Profit")
+        oi, ni = rowvals(inc, "Operating Income"), rowvals(inc, "Net Income")
+        eps, fcf = rowvals(inc, "Diluted EPS"), rowvals(cf, "Free Cash Flow")
+
+        data = []
+        for i, y in enumerate(years):
+            r = safe_float(rev[i])
+            def margin(v):
+                v = safe_float(v)
+                return round(v / r * 100, 1) if (r and v is not None) else None
+            data.append({
+                "Year": y,
+                "Revenue ($B)": round(r / 1e9, 1) if r else None,
+                "Gross Margin %": margin(gp[i]),
+                "Operating Margin %": margin(oi[i]),
+                "Net Margin %": margin(ni[i]),
+                "FCF ($B)": round(safe_float(fcf[i]) / 1e9, 1) if safe_float(fcf[i]) is not None else None,
+                "EPS": round(safe_float(eps[i]), 2) if safe_float(eps[i]) is not None else None,
+            })
+        df = pd.DataFrame(data).sort_values("Year").reset_index(drop=True)
+        return df if len(df) >= 2 else None
+    except Exception:
+        return None
+
+
+def revenue_margin_chart(tdf):
+    """Revenue bars + net-margin line (dual axis) — growth and profitability together."""
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=tdf["Year"], y=tdf["Revenue ($B)"], name="Revenue ($B)",
+                         marker_color="#2b6f63", yaxis="y"))
+    fig.add_trace(go.Scatter(x=tdf["Year"], y=tdf["Net Margin %"], name="Net Margin %",
+                             mode="lines+markers", line=dict(color=ACCENT, width=3), yaxis="y2"))
+    fig.update_layout(
+        yaxis=dict(title="Revenue ($B)", gridcolor=CHART_GRID),
+        yaxis2=dict(title="Net Margin %", overlaying="y", side="right", showgrid=False),
+        xaxis=dict(title=None, gridcolor=CHART_GRID, tickmode="array", tickvals=tdf["Year"]),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+    )
+    return _style_fig(fig, height=340)
+
+
+def margins_trend_chart(tdf):
+    fig = go.Figure()
+    for col, color in [("Gross Margin %", "#6aa9ff"), ("Operating Margin %", "#E0B34D"), ("Net Margin %", ACCENT)]:
+        fig.add_trace(go.Scatter(x=tdf["Year"], y=tdf[col], name=col, mode="lines+markers",
+                                 line=dict(color=color, width=2)))
+    fig.update_yaxes(title="Margin %", gridcolor=CHART_GRID)
+    fig.update_xaxes(gridcolor=CHART_GRID, tickmode="array", tickvals=tdf["Year"])
+    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    return _style_fig(fig, height=340)
+
+
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
 def get_forward_signals(ticker):
     """Forward-looking factors with real documented edge (Yahoo, free):
@@ -3287,6 +3354,37 @@ def stock_deep_dive():
                 {"Metric": "Net Debt/EBITDA", "Value": row["Net Debt/EBITDA"], "Meaning": "Debt compared to earnings power."},
             ])
             st.dataframe(health_df, width="stretch")
+
+            st.divider()
+            st.markdown("### 5-Year Fundamental Trends")
+            st.caption("Is the business actually improving, or just cheap? Trajectory matters as much as the snapshot.")
+            tdf = get_fundamental_trends(ticker)
+            if tdf is None or len(tdf) < 2:
+                st.info("Multi-year financials aren't available for this ticker.")
+            else:
+                # summary read
+                rev = tdf["Revenue ($B)"].dropna()
+                nm = tdf["Net Margin %"].dropna()
+                fcf = tdf["FCF ($B)"].dropna()
+                bits = []
+                if len(rev) >= 2 and rev.iloc[0] > 0:
+                    yrs = len(rev) - 1
+                    cagr = ((rev.iloc[-1] / rev.iloc[0]) ** (1 / yrs) - 1) * 100 if yrs else 0
+                    bits.append(f"Revenue { 'growing' if cagr>1 else 'flat/declining'} (~{cagr:.0f}%/yr over {yrs}y)")
+                if len(nm) >= 2:
+                    d = nm.iloc[-1] - nm.iloc[0]
+                    bits.append(f"net margin {'expanding' if d>0.5 else 'contracting' if d<-0.5 else 'stable'} ({nm.iloc[0]:.0f}%→{nm.iloc[-1]:.0f}%)")
+                if len(fcf) >= 2:
+                    bits.append(f"FCF {'rising' if fcf.iloc[-1]>fcf.iloc[0] else 'falling/flat'}")
+                if bits:
+                    st.write("**Trajectory:** " + " · ".join(bits) + ".")
+                g1, g2 = st.columns(2)
+                with g1:
+                    st.plotly_chart(revenue_margin_chart(tdf), width="stretch")
+                with g2:
+                    st.plotly_chart(margins_trend_chart(tdf), width="stretch")
+                with st.expander("Year-by-year detail"):
+                    st.dataframe(tdf.set_index("Year"), width="stretch")
         with tab8:
             st.subheader("Analyst & Forward View")
             st.caption("Forward-looking Wall Street consensus (Yahoo Finance). Complements the engine's trailing-data valuation with what analysts expect ahead.")
