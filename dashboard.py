@@ -2528,6 +2528,63 @@ def build_portfolio_analysis(portfolio_df):
     return df
 
 
+def portfolio_risk_analytics(analysis):
+    """Diversification & risk view of the holdings: weighted beta, concentration
+    (Herfindahl / effective number of positions), and the correlation between holdings —
+    the 'am I really diversified, or do I own six versions of the same bet?' check."""
+    if analysis is None or analysis.empty:
+        return {}
+    tickers = [str(t).upper() for t in analysis["Ticker"].tolist()]
+    weights = (analysis.set_index("Ticker")["Portfolio Weight %"].astype(float) / 100)
+
+    betas = analysis.set_index("Ticker").get("Beta")
+    weighted_beta = None
+    if betas is not None:
+        wb = [weights.get(t, 0) * safe_float(betas.get(t), 1.0) for t in tickers]
+        weighted_beta = round(sum(wb), 2)
+
+    w = weights.reindex(tickers).fillna(0).values
+    hhi = float((w ** 2).sum()) if len(w) else 0.0
+    eff_n = round(1 / hhi, 1) if hhi > 0 else len(tickers)
+
+    corr, avg_corr = None, None
+    if len(tickers) >= 2:
+        price_data = get_price_history(tickers, period="1y")
+        rets = {}
+        for t in tickers:
+            s = price_data.get(t)
+            if s is not None and len(s) > 30:
+                rets[t] = s.pct_change().dropna()
+        if len(rets) >= 2:
+            rdf = pd.DataFrame(rets).dropna()
+            if len(rdf) > 20:
+                corr = rdf.corr().round(2)
+                import numpy as np
+                m = corr.values
+                mask = ~np.eye(len(m), dtype=bool)
+                avg_corr = round(float(m[mask].mean()), 2)
+
+    return {
+        "weighted_beta": weighted_beta,
+        "effective_positions": eff_n,
+        "n_positions": len(tickers),
+        "avg_correlation": avg_corr,
+        "corr": corr,
+    }
+
+
+def portfolio_corr_heatmap(corr):
+    if corr is None or getattr(corr, "empty", True):
+        return None
+    fig = go.Figure(go.Heatmap(
+        z=corr.values, x=list(corr.columns), y=list(corr.index),
+        zmin=-1, zmax=1, colorscale="RdYlGn_r",
+        text=corr.values, texttemplate="%{text:.2f}", textfont={"size": 9},
+        colorbar=dict(title="corr"),
+    ))
+    return _style_fig(fig, height=max(320, 60 + 34 * len(corr)))
+
+
 def calculate_portfolio_health(portfolio_analysis):
     if portfolio_analysis is None or portfolio_analysis.empty:
         return {}
@@ -2765,6 +2822,38 @@ def portfolio_manager_page():
 
             st.subheader("Portfolio Health Breakdown")
             st.json(health)
+
+            st.divider()
+            st.subheader("🛡️ Risk & Diversification")
+            with st.spinner("Analyzing diversification..."):
+                risk = portfolio_risk_analytics(analysis)
+            r1, r2, r3 = st.columns(3)
+            wb = risk.get("weighted_beta")
+            r1.metric("Portfolio Beta", wb if wb is not None else "N/A",
+                      help="Weighted market sensitivity. >1 = swings more than the market, <1 = less.")
+            eff, npos = risk.get("effective_positions"), risk.get("n_positions")
+            r2.metric("Effective Positions", f"{eff} of {npos}",
+                      help="Diversification-adjusted count. Much lower than your holding count means a few positions dominate.")
+            ac = risk.get("avg_correlation")
+            r3.metric("Avg Correlation", ac if ac is not None else "N/A",
+                      help="How similarly your holdings move. Lower = better diversified.")
+
+            if wb is not None:
+                st.caption(f"Beta {wb}: your portfolio {'amplifies' if wb > 1.05 else 'dampens' if wb < 0.95 else 'tracks'} market moves.")
+            if ac is not None:
+                if ac >= 0.7:
+                    st.warning(f"⚠️ High average correlation ({ac}) — your holdings tend to move together, so you're less diversified than the number of names suggests.")
+                elif ac <= 0.4:
+                    st.success(f"🟢 Low average correlation ({ac}) — holdings move fairly independently. Good diversification.")
+                else:
+                    st.info(f"Moderate average correlation ({ac}).")
+            if eff and npos and eff < npos * 0.6:
+                st.warning(f"⚠️ Concentration: your {npos} holdings behave like ~{eff} equal positions — a few names dominate the risk.")
+
+            heat = portfolio_corr_heatmap(risk.get("corr"))
+            if heat is not None:
+                st.markdown("**How your holdings move together** (green = independent, red = move in lockstep)")
+                st.plotly_chart(heat, width="stretch")
 
     with tab2:
         st.subheader("New Money Allocator")
