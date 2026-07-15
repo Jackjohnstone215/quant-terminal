@@ -4380,24 +4380,31 @@ def daily_briefing_page():
     st.title("🏠 Daily Briefing")
     st.caption("Your one-glance start: market mood, what's moving on your watchlist, earnings ahead, and fresh opportunities.")
 
-    # --- Market mood ---
-    try:
-        snapshot = get_market_snapshot()
-        health, regime = get_market_health(snapshot)
-    except Exception:
-        snapshot, health, regime = [], 50, "Unknown"
-    m = st.columns(4)
-    m[0].metric("Market Health", f"{health}/100", regime)
-    if snapshot:
-        sd = pd.DataFrame(snapshot).sort_values("Change %", ascending=False)
-        for i, (_, r) in enumerate(sd.head(3).iterrows()):
-            m[i + 1].metric(r["Asset"], money(r["Price"]), f"{r['Change %']}%")
-
+    # Local data first — renders instantly (no network).
     scan = load_sp500_scores()
     scan = enhance_research_columns(scan) if not scan.empty else scan
     if not scan.empty:
         scan = add_score_change(scan)
     wl = load_watchlist()
+
+    # Live market data is OPT-IN: Yahoo is slow/rate-limited on the cloud, so we never let it
+    # block the page. Click to pull today's market mood + earnings; everything else is instant.
+    if st.button("🔄 Load live market data", type="primary") or st.session_state.get("briefing_live"):
+        st.session_state["briefing_live"] = True
+        with st.spinner("Fetching live market data..."):
+            try:
+                snapshot = get_market_snapshot()
+                health, regime = get_market_health(snapshot)
+            except Exception:
+                snapshot, health, regime = [], 50, "Unknown"
+        m = st.columns(4)
+        m[0].metric("Market Health", f"{health}/100", regime)
+        if snapshot:
+            sd = pd.DataFrame(snapshot).sort_values("Change %", ascending=False)
+            for i, (_, r) in enumerate(sd.head(3).iterrows()):
+                m[i + 1].metric(r["Asset"], money(r["Price"]), f"{r['Change %']}%")
+    else:
+        st.caption("📈 Click **Load live market data** for today's market mood & earnings dates. (Kept off auto-load so this page opens instantly — live quotes are slow on the free cloud host.)")
 
     st.divider()
     left, right = st.columns([1.1, 1])
@@ -4431,8 +4438,8 @@ def daily_briefing_page():
                         for _, r in movers.iterrows():
                             st.caption(f"  {r['Ticker']}: {r['Conviction Change']:+.0f} → {r['Conviction Score']:.0f}/100")
 
-        # Earnings this week
-        if wl:
+        # Earnings this week — only after live data is loaded (avoids per-ticker network on open)
+        if wl and st.session_state.get("briefing_live"):
             soon = []
             for t in wl:
                 d0 = get_next_earnings(t)
