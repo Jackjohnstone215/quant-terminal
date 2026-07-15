@@ -732,25 +732,47 @@ def normalize_scores_df(df):
 
 @st.cache_data(ttl=900, show_spinner=False)
 def get_market_snapshot():
+    """Snapshot of the market assets. Uses a SINGLE batched download (fast) instead of one
+    slow sequential call per ticker — the old approach hung the home page on Streamlit Cloud
+    where Yahoo is rate-limited. Falls back to per-ticker only if the batch fails."""
+    tickers = list(MARKET_ASSETS.keys())
+
+    def _row(name, tk, closes):
+        closes = closes.dropna()
+        if len(closes) < 2:
+            return None
+        cur, prev = safe_float(closes.iloc[-1]), safe_float(closes.iloc[-2])
+        if not cur or not prev:
+            return None
+        r3 = ((cur / safe_float(closes.iloc[-63], cur)) - 1) * 100 if len(closes) > 63 else 0
+        return {"Asset": name, "Ticker": clean_ticker(tk), "Price": round(cur, 2),
+                "Change %": round((cur - prev) / prev * 100, 2), "3M Return %": round(r3, 2)}
+
     rows = []
-    for ticker, name in MARKET_ASSETS.items():
-        try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="6mo")
-            if len(hist) >= 2:
-                current = safe_float(hist["Close"].iloc[-1])
-                previous = safe_float(hist["Close"].iloc[-2])
-                pct_change = ((current - previous) / previous) * 100
-                return_3m = ((current / safe_float(hist["Close"].iloc[-63], current)) - 1) * 100 if len(hist) > 63 else 0
-                rows.append({
-                    "Asset": name,
-                    "Ticker": clean_ticker(ticker),
-                    "Price": round(current, 2),
-                    "Change %": round(pct_change, 2),
-                    "3M Return %": round(return_3m, 2),
-                })
-        except Exception:
-            pass
+    try:
+        data = yf.download(tickers, period="6mo", progress=False, group_by="ticker", threads=True)
+        for tk, name in MARKET_ASSETS.items():
+            try:
+                closes = data[tk]["Close"] if tk in data.columns.get_level_values(0) else None
+                if closes is not None:
+                    r = _row(name, tk, closes)
+                    if r:
+                        rows.append(r)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    if not rows:   # fallback: per-ticker (short period so it can't hang for long)
+        for tk, name in MARKET_ASSETS.items():
+            try:
+                h = yf.Ticker(tk).history(period="5d")
+                if len(h) >= 2:
+                    r = _row(name, tk, h["Close"])
+                    if r:
+                        rows.append(r)
+            except Exception:
+                pass
     return rows
 
 
