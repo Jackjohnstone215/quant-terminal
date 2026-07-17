@@ -42,6 +42,16 @@ def apply_custom_style():
         h1, h2, h3 { letter-spacing: -0.01em; }
         /* Dataframe rounded corners */
         div[data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
+        /* Sidebar nav: left-aligned, tightly-packed buttons that read as nav items */
+        section[data-testid="stSidebar"] div.stButton > button {
+            text-align: left; justify-content: flex-start;
+            font-weight: 500; border: none; padding: 5px 12px; width: 100%;
+        }
+        section[data-testid="stSidebar"] div.stButton { margin-bottom: -8px; }
+        /* Section labels: small, muted, spaced from the group above */
+        section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] {
+            margin: 14px 0 2px 0; letter-spacing: 0.08em;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -6671,52 +6681,69 @@ def compare_page():
             st.caption(f"Scored live (not in last saved scan): {', '.join(map(str, live))}")
 
 
+# Grouped navigation: pages organized by workflow (find → analyze → build → learn), each with a
+# consistent icon. Button-based so it reads as a real nav and stays fully headless-testable.
+NAV_SECTIONS = [
+    ("Start", [
+        ("🏠 Daily Briefing", daily_briefing_page),
+        ("🌐 Market Command Center", market_command_center),
+        ("⭐ My Watchlist", watchlist_page),
+    ]),
+    ("Find Ideas", [
+        ("🧭 Quant Opportunity Engine", opportunity_engine),
+        ("📋 Research Queue", research_queue_page),
+    ]),
+    ("Analyze", [
+        ("🔎 Quant Stock Deep Dive", stock_deep_dive),
+        ("⚖️ Compare Stocks", compare_page),
+        ("🧮 Valuation Lab", valuation_lab_page),
+        ("📈 ETF Explorer", etf_explorer_page),
+        ("📓 Research Journal", research_journal_page),
+    ]),
+    ("Portfolio", [
+        ("💼 Portfolio Manager AI", portfolio_manager_page),
+        ("📐 Position Sizer", position_sizer_page),
+        ("🧪 Paper Trading", paper_trading_page),
+    ]),
+    ("Strategy & Learn", [
+        ("🧩 Strategy Builder", strategy_builder_page),
+        ("⏳ Backtesting Lab", backtesting_page),
+        ("🎓 Learning Center", learning_center),
+    ]),
+]
+NAV_DISPATCH = {label: fn for _, items in NAV_SECTIONS for label, fn in items}
+DEFAULT_PAGE = "🏠 Daily Briefing"
+
+
+def _go_to(label):
+    st.session_state["nav_page"] = label
+
+
+def render_nav():
+    """Grouped, icon'd sidebar nav. Active page is the highlighted (primary) button; selection
+    persists in session_state so exactly one page is active across all sections."""
+    if st.session_state.get("nav_page") not in NAV_DISPATCH:
+        st.session_state["nav_page"] = DEFAULT_PAGE
+    current = st.session_state["nav_page"]
+    for section, items in NAV_SECTIONS:
+        st.sidebar.caption(section.upper())
+        for label, _ in items:
+            st.sidebar.button(
+                label, key=f"nav::{label}", use_container_width=True,
+                type="primary" if label == current else "secondary",
+                on_click=_go_to, args=(label,),
+            )
+
+
 def main():
     apply_custom_style()
     app_header()
     auth_sidebar()
     st.sidebar.divider()
-    page = st.sidebar.radio(
-        "Choose Page",
-        ["🏠 Daily Briefing", "Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Research Journal", "Paper Trading", "Backtesting Lab", "Learning Center"]
-    )
+    render_nav()
     st.sidebar.divider()
-    st.sidebar.write("**Goal:** Full quant stock evaluation")
-    st.sidebar.write("**Master Scores:** Investment, Opportunity, Position Trade, Health, Expected Return")
-    st.sidebar.write("**Focus:** Undervalued + growth + quality + momentum + risk control")
-
-    if page == "🏠 Daily Briefing":
-        daily_briefing_page()
-    elif page == "Market Command Center":
-        market_command_center()
-    elif page == "My Watchlist":
-        watchlist_page()
-    elif page == "Compare Stocks":
-        compare_page()
-    elif page == "Research Queue":
-        research_queue_page()
-    elif page == "Portfolio Manager AI":
-        portfolio_manager_page()
-    elif page == "Position Sizer":
-        position_sizer_page()
-    elif page == "Quant Opportunity Engine":
-        opportunity_engine()
-    elif page == "Quant Stock Deep Dive":
-        stock_deep_dive()
-    elif page == "ETF Explorer":
-        etf_explorer_page()
-    elif page == "Valuation Lab":
-        valuation_lab_page()
-    elif page == "Strategy Builder":
-        strategy_builder_page()
-    elif page == "Research Journal":
-        research_journal_page()
-    elif page == "Paper Trading":
-        paper_trading_page()
-    elif page == "Backtesting Lab":
-        backtesting_page()
-    else:
-        learning_center()
+    st.sidebar.caption("Quant research terminal · data: FMP + Yahoo Finance")
+    NAV_DISPATCH[st.session_state["nav_page"]]()
 
 
 if __name__ == "__main__":
