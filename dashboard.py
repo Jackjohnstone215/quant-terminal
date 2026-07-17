@@ -4045,6 +4045,53 @@ def stock_deep_dive():
                                if implied * 100 > sg * 100 + 3
                                else "🟢 The implied growth is within what the business can fund internally — a realistic, self-financing path.")
                         )
+
+            # ---- Normalized (cyclically-adjusted) earnings ----
+            price_now = safe_float(row.get("Price"))
+            st.divider()
+            st.markdown("### Normalized earnings check")
+            st.caption("A single boom/bust year distorts P/E. Normalizing to the company's *average* margin shows whether current earnings (and today's P/E) are unusually high or low.")
+            tnorm = get_fundamental_trends(ticker)
+            cur_pe3 = safe_float(row.get("P/E"))
+            if tnorm is None or "Net Margin %" not in tnorm.columns or not cur_pe3:
+                st.caption("Not enough margin history to normalize for this stock.")
+            else:
+                nm = tnorm["Net Margin %"].dropna()
+                if len(nm) >= 3:
+                    avg_m, cur_m = float(nm.mean()), float(nm.iloc[-1])
+                    if cur_m and cur_m != 0:
+                        norm_eps = (price_now / cur_pe3) * (avg_m / cur_m)  # scale EPS by margin normalcy
+                        norm_pe = price_now / norm_eps if norm_eps else None
+                        n1, n2, n3 = st.columns(3)
+                        n1.metric("Current P/E", f"{cur_pe3:.1f}")
+                        n2.metric("Normalized P/E", f"{norm_pe:.1f}" if norm_pe else "N/A",
+                                  help="P/E if earnings were at the company's average margin.")
+                        n3.metric("Margin now vs avg", f"{cur_m:.0f}% vs {avg_m:.0f}%")
+                        if cur_m > avg_m * 1.15:
+                            st.warning(f"🔴 Current margin ({cur_m:.0f}%) is **above** its average ({avg_m:.0f}%) — earnings may be peaking, so the real (normalized) P/E is higher (~{norm_pe:.0f}). The stock may be more expensive than it looks.")
+                        elif cur_m < avg_m * 0.85:
+                            st.success(f"🟢 Current margin ({cur_m:.0f}%) is **below** its average ({avg_m:.0f}%) — earnings may be depressed, so normalized P/E is lower (~{norm_pe:.0f}). Could be cheaper than it looks if margins recover.")
+                        else:
+                            st.info("Current margin is near its historical average — reported earnings look representative.")
+
+            # ---- Bull / base / bear scenario valuation ----
+            st.divider()
+            st.markdown("### Scenario valuation (bull / base / bear)")
+            st.caption("Fair value isn't one number. Here's the DCF under three growth scenarios so you see the plausible range.")
+            fcf_ps_s = (safe_float(row.get("FCF Yield %"), 0) / 100) * price_now
+            base_g = min(max(safe_float(row.get("Revenue Growth %"), 6) / 100, 0.0), 0.16)
+            rr_s = capm_rate(row.get("Beta"))
+            if fcf_ps_s and fcf_ps_s > 0:
+                scenarios = [("🐻 Bear", max(base_g - 0.05, -0.02)), ("● Base", base_g), ("🐂 Bull", base_g + 0.05)]
+                sc = st.columns(3)
+                for i, (label, g) in enumerate(scenarios):
+                    v = dcf_3stage(fcf_ps_s, g, rr_s)
+                    up = (v - price_now) / price_now * 100 if (v and price_now) else None
+                    sc[i].metric(f"{label} ({g*100:.0f}% gr)", money(v) if v else "N/A",
+                                 f"{up:+.0f}%" if up is not None else None)
+                st.caption(f"Discounted at a {rr_s*100:.1f}% CAPM rate. The spread between bear and bull is your uncertainty — a wide gap means the valuation hinges heavily on growth assumptions.")
+            else:
+                st.caption("Scenario DCF needs positive free cash flow — not applicable here.")
         with tab3:
             st.subheader("Quality + Health")
             health_df = pd.DataFrame([
