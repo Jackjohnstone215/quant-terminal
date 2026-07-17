@@ -631,6 +631,19 @@ def enhance_research_columns(df):
         df["Investment Score"] * 0.10
     ).round(1)
 
+    # Sector-relative fair value: what each stock would be worth at its SECTOR's median P/E
+    # (relative valuation done properly — a bank vs banks, software vs software). Needs >=3
+    # peers with valid P/E in the sector, else left blank.
+    if "P/E" in df.columns and "Sector" in df.columns and "Price" in df.columns:
+        pe_num = pd.to_numeric(df["P/E"], errors="coerce")
+        price_num = pd.to_numeric(df["Price"], errors="coerce")
+        eps = price_num / pe_num.where(pe_num > 0)
+        sec_med = pe_num.where(pe_num > 0).groupby(df["Sector"]).transform("median")
+        sec_cnt = pe_num.where(pe_num > 0).groupby(df["Sector"]).transform("count")
+        sfv = (sec_med * eps).where(sec_cnt >= 3)
+        df["Sector Fair Value"] = sfv.round(2)
+        df["Sector Median P/E"] = sec_med.where(sec_cnt >= 3).round(1)
+
     return df
 
 
@@ -993,15 +1006,17 @@ def reverse_dcf_growth(price, fcf_ps, beta):
 
 def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth_score,
                         cash_flow_score, risk_score, growth_rate, high_52, low_52,
-                        beta=None, dividend_yield=None, roe=None, payout=None):
+                        beta=None, dividend_yield=None, roe=None, payout=None,
+                        sector=None, price_to_book=None):
     """Blend several valuation methods into an honest fair-value range.
 
-    Methods: justified P/E, EV/FCF, a CAPM-discounted 3-stage DCF, PEG, 52-week midpoint,
-    and (for payers) a Dividend Discount Model. Each is capped to a sane band around price,
-    then the CENTRAL value is the median (robust to outliers)."""
+    Sector-aware: banks/insurers can't be valued on free cash flow, so for financials we
+    skip DCF/EV-FCF and add a justified P/B (from ROE) instead — the right tool per business.
+    Each method is capped to a sane band around price; central value is the median."""
     price = safe_float(price)
     if not price or price <= 0:
         return {"central": None, "low": None, "high": None, "methods": []}
+    is_financial = bool(sector) and any(k in str(sector).lower() for k in ["financ", "bank", "insur"])
     methods = []
 
     pe = safe_float(pe)
@@ -1016,18 +1031,30 @@ def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth
             fair_pe = 14
         methods.append(("P/E", eps * fair_pe))
 
-    ev_to_fcf = safe_float(ev_to_fcf)
-    if ev_to_fcf and ev_to_fcf > 0:
-        fair_ev_fcf = 20
-        if quality_score >= 80 and cash_flow_score >= 75:
-            fair_ev_fcf = 28
-        elif quality_score < 50:
-            fair_ev_fcf = 14
-        methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
+    if not is_financial:
+        ev_to_fcf = safe_float(ev_to_fcf)
+        if ev_to_fcf and ev_to_fcf > 0:
+            fair_ev_fcf = 20
+            if quality_score >= 80 and cash_flow_score >= 75:
+                fair_ev_fcf = 28
+            elif quality_score < 50:
+                fair_ev_fcf = 14
+            methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
 
-    dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta, roe, payout)
-    if dcf:
-        methods.append(("DCF (3-stage, CAPM)", dcf))
+        dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta, roe, payout)
+        if dcf:
+            methods.append(("DCF (3-stage, CAPM)", dcf))
+    else:
+        # Financials: justified P/B = (ROE − g)/(r − g), applied to book value per share.
+        ptb = safe_float(price_to_book)
+        roe_f = safe_float(roe)
+        if ptb and ptb > 0 and roe_f is not None:
+            book_ps = price / ptb
+            r = capm_rate(beta)
+            g = min(max(sustainable_growth(roe, payout) or 0.02, 0.0), r - 0.005)
+            fair_pb = (roe_f - g) / (r - g) if (r > g and roe_f > g) else (roe_f / r if r else 1.0)
+            fair_pb = min(max(fair_pb, 0.3), 5.0)
+            methods.append(("P/B (justified)", fair_pb * book_ps))
 
     # Dividend Discount Model (Gordon growth) — for dividend payers
     dy = safe_float(dividend_yield)
@@ -1906,6 +1933,7 @@ def get_quant_score(ticker):
         quality_score, growth_score, cash_flow_score, risk_score,
         revenue_growth, high_52, low_52,
         beta=beta, dividend_yield=dividend_yield, roe=roe, payout=payout_ratio,
+        sector=sector, price_to_book=price_to_book,
     )
     fair_value = fv["central"] if fv["central"] else price
     fair_value_low = fv["low"]
@@ -3909,6 +3937,16 @@ def stock_deep_dive():
                     val_sorted = combined.sort_values("Valuation Score", ascending=False).reset_index(drop=True)
                     val_rank = val_sorted.index[val_sorted["Ticker"].astype(str).str.upper() == str(row["Ticker"]).upper()][0] + 1
                     st.write(f"**{row['Ticker']}** ranks **#{rank} of {n}** in {sector} by Overall Quant Score, and **#{val_rank} of {n}** on valuation (cheapness).")
+                    # Sector-relative fair value: value this stock at its sector's median P/E
+                    cur_pe2 = safe_float(row.get("P/E"))
+                    px2 = safe_float(row.get("Price"))
+                    peer_pes = pd.to_numeric(peers["P/E"], errors="coerce")
+                    peer_pes = peer_pes[peer_pes > 0]
+                    if cur_pe2 and cur_pe2 > 0 and px2 and len(peer_pes) >= 2:
+                        med_pe = float(peer_pes.median())
+                        sec_fv = med_pe * (px2 / cur_pe2)
+                        updown = (sec_fv - px2) / px2 * 100
+                        st.write(f"At the **sector median P/E ({med_pe:.1f})**, {row['Ticker']} would be worth ~**{money(sec_fv)}** ({updown:+.0f}% vs today) — its own P/E is {cur_pe2:.1f}.")
                     pcols = ["Ticker", "Company", "Overall Quant Score", "Conviction Score",
                              "Valuation Score", "Quality Score", "Growth Score", "P/E", "Upside %"]
                     peer_view = combined[[c for c in pcols if c in combined.columns]].head(10)
