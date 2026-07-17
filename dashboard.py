@@ -904,6 +904,86 @@ def get_market_news(hours_back=10):
     return sorted(unique, key=lambda x: (x["Importance"], x["Published"]), reverse=True)
 
 
+# Catalyst taxonomy for the per-ticker timeline. Each rule is (label, icon, keywords); the
+# FIRST rule whose keyword appears wins, so order = specificity (deal/earnings before generic
+# tech). Keywords are padded-safe where a bare token would over-match (e.g. " ai " not "ai").
+# Public keyword heuristics — not any proprietary taxonomy.
+CATALYST_RULES = [
+    ("M&A / Deal",         "🤝", ["acqui", "merger", " merge", "buyout", "takeover", "spinoff", "spin-off"]),
+    ("Earnings",           "📊", ["earnings", "revenue", "profit", "guidance", " eps", "quarterly", " results", "beats", "misses", "forecast", "outlook"]),
+    ("Analyst action",     "🎯", ["upgrade", "downgrade", "price target", "analyst", " rating", "initiat", "reiterat", "overweight", "underweight"]),
+    ("Capital return",     "💰", ["dividend", "buyback", "repurchase", "stock split", "share split"]),
+    ("Legal / Regulatory", "⚖️", ["lawsuit", "sec ", "doj", "regulat", "antitrust", " fine", "probe", "investigat", "settlement", "subpoena", "recall"]),
+    ("Product / Tech",     "🚀", ["launch", "unveil", "new product", "partnership", "contract", "rollout", "artificial intelligence", "chip", "semiconductor", "patent"]),
+    ("Leadership",         "👤", [" ceo", " cfo", "resign", "appoint", "steps down", "named ", "executive"]),
+    ("Macro",              "🌐", ["fed ", "inflation", "cpi", "interest rate", "tariff", "recession", "payrolls", "jobs report"]),
+]
+
+
+def classify_catalyst(title, summary=""):
+    """Map a headline to a single primary catalyst type -> (label, icon). First matching rule
+    wins; falls back to a generic 'News' bucket. Public keyword heuristics, not proprietary."""
+    text = f" {title} {summary} ".lower()
+    for label, icon, words in CATALYST_RULES:
+        if any(w in text for w in words):
+            return label, icon
+    return "News", "📰"
+
+
+def build_catalyst_timeline(news):
+    """Turn a ticker's headline list into a chronological catalyst timeline plus a rolling,
+    importance-weighted sentiment read. Reuses each article's existing Importance (1-10) and
+    Signal (Bullish/Bearish/Neutral) — no new scoring model. Returns
+        {'events': [article + Catalyst/Icon/Tone, ...], 'rollup': {...}}
+    or None when there's no news to work with."""
+    if not news:
+        return None
+    events = []
+    for a in news:
+        label, icon = classify_catalyst(a.get("Title", ""), a.get("Summary", ""))
+        sig = a.get("Signal", "Neutral")
+        tone = "🟢" if sig == "Bullish" else ("🔴" if sig == "Bearish" else "⚪")
+        events.append({**a, "Catalyst": label, "Icon": icon, "Tone": tone})
+    events.sort(key=lambda x: x["Published"], reverse=True)
+
+    # Importance-weighted sentiment tilt in [-1, 1]: bullish adds weight, bearish subtracts.
+    total_w = sum(max(safe_float(e.get("Importance"), 1), 1) for e in events)
+    net = 0.0
+    for e in events:
+        w = max(safe_float(e.get("Importance"), 1), 1)
+        if e["Tone"] == "🟢":
+            net += w
+        elif e["Tone"] == "🔴":
+            net -= w
+    tilt = (net / total_w) if total_w else 0.0
+
+    if tilt > 0.15:
+        flow = "🟢 Net positive news flow"
+    elif tilt < -0.15:
+        flow = "🔴 Net negative news flow"
+    else:
+        flow = "⚪ Mixed / neutral news flow"
+
+    counts = {"Bullish": 0, "Bearish": 0, "Neutral": 0}
+    cat_counter = {}
+    for e in events:
+        counts[e.get("Signal", "Neutral")] = counts.get(e.get("Signal", "Neutral"), 0) + 1
+        cat_counter[e["Catalyst"]] = cat_counter.get(e["Catalyst"], 0) + 1
+    top_cats = sorted(cat_counter.items(), key=lambda x: x[1], reverse=True)[:3]
+
+    dates = [e["Published"] for e in events]
+    span_days = (max(dates) - min(dates)).days if len(dates) > 1 else 0
+    lead_cat = top_cats[0][0] if top_cats else "News"
+    read = (f"{len(events)} headline(s) over ~{span_days} day(s), led by {lead_cat.lower()}. " +
+            ("Bulls have the recent narrative." if tilt > 0.15 else
+             "Bears have the recent narrative." if tilt < -0.15 else
+             "No clear directional tilt in the recent flow."))
+
+    return {"events": events, "rollup": {
+        "flow": flow, "tilt": tilt, "counts": counts, "top_cats": top_cats,
+        "span_days": span_days, "n": len(events), "read": read}}
+
+
 RISK_FREE_RATE = 0.043     # ~10-yr Treasury
 EQUITY_RISK_PREMIUM = 0.05  # long-run equity premium over risk-free
 
@@ -4155,9 +4235,9 @@ def stock_deep_dive():
                 price_with_fair_value(hist, row.get("Fair Value Low"), row.get("Fair Value High"), row.get("Fair Value")),
                 width="stretch",
             )
-        tab_biz, tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab7 = st.tabs([
+        tab_biz, tab1, tab2, tab3, tab8, tab4, tab_cat, tab5, tab6, tab7 = st.tabs([
             "🏢 The Business", "Master Scores", "Valuation + Cash Flow", "Quality + Health",
-            "📊 Analyst View", "Momentum + News", "Bull vs Bear", "🤖 AI Analyst", "Metric Guide"
+            "📊 Analyst View", "Momentum + News", "🗓️ Catalysts", "Bull vs Bear", "🤖 AI Analyst", "Metric Guide"
         ])
         with tab_biz:
             st.subheader("Know the Business")
@@ -4658,6 +4738,39 @@ def stock_deep_dive():
                     st.write(f"**Source:** {article['Provider']} | **Published:** {article['Published'].strftime('%Y-%m-%d %I:%M %p UTC')}")
                     if article["Summary"]:
                         st.write(article["Summary"])
+        with tab_cat:
+            st.subheader("Catalyst Timeline")
+            st.caption("The recent news flow, sorted newest-first and tagged by catalyst type, with a rolling read of whether the narrative is tilting bullish or bearish. Sentiment reuses the same rule-based headline scoring as the rest of the app — a research aid, not financial advice.")
+            cat_news = get_ticker_news(ticker, hours_back=24 * 45)
+            timeline = build_catalyst_timeline(cat_news)
+            if not timeline:
+                st.info("No recent headlines found for this ticker to build a timeline.")
+            else:
+                r = timeline["rollup"]
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("News flow", r["flow"].split(" ", 1)[1], r["flow"].split(" ", 1)[0])
+                m2.metric("Headlines", r["n"], f"~{r['span_days']}d window")
+                m3.metric("Bull / Bear", f"{r['counts'].get('Bullish',0)} / {r['counts'].get('Bearish',0)}")
+                m4.metric("Top catalyst", r["top_cats"][0][0] if r["top_cats"] else "—")
+                st.write(r["read"])
+                if r["top_cats"]:
+                    st.caption("Catalyst mix: " + " · ".join(f"{lbl} ({n})" for lbl, n in r["top_cats"]))
+                st.divider()
+
+                last_day = None
+                for e in timeline["events"]:
+                    day = e["Published"].strftime("%b %d, %Y")
+                    if day != last_day:
+                        st.markdown(f"**{day}**")
+                        last_day = day
+                    with st.container(border=True):
+                        imp = int(safe_float(e.get("Importance"), 1))
+                        title = e.get("Title", "")
+                        url = e.get("URL", "")
+                        head = f"[{title}]({url})" if url else title
+                        st.markdown(f"{e['Tone']} {e['Icon']} **{e['Catalyst']}** · importance {imp}/10")
+                        st.markdown(head)
+                        st.caption(f"{e.get('Provider','')} · {e['Published'].strftime('%I:%M %p UTC')}")
         with tab5:
             st.subheader("Bull Case")
             for item in bull:
