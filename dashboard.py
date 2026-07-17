@@ -2682,9 +2682,17 @@ def signed_in():
     return supabase_configured() and get_sb() is not None and sb_user() is not None
 
 
+def _clean_secret(v):
+    """Strip whitespace and any non-printable-ASCII characters. Supabase URLs/keys are pure
+    ASCII, so this only removes paste artifacts (smart quotes, zero-width chars, newlines)
+    that otherwise crash header encoding with an 'ascii codec' error."""
+    return "".join(ch for ch in str(v or "").strip() if 32 <= ord(ch) < 127)
+
+
 def _new_sb_client():
     from supabase import create_client
-    return create_client(_get_secret("SUPABASE_URL"), _get_secret("SUPABASE_ANON_KEY"))
+    return create_client(_clean_secret(_get_secret("SUPABASE_URL")),
+                         _clean_secret(_get_secret("SUPABASE_ANON_KEY")))
 
 
 def sb_sign_in(email, password, sign_up=False):
