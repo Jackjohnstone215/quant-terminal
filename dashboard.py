@@ -238,6 +238,7 @@ SP500_HISTORY = APP_DIR / "sp500_quant_score_history.csv"
 PORTFOLIO_FILE = APP_DIR / "portfolio_manager_ai.csv"
 WATCHLIST_FILE = APP_DIR / "watchlist.csv"
 JOURNAL_FILE = APP_DIR / "research_journal.csv"
+TRADES_FILE = APP_DIR / "paper_trades.json"
 
 # Load a local .env (for OPENAI_API_KEY etc.) if present. Safe no-op if the file/lib is missing.
 try:
@@ -2733,7 +2734,7 @@ def _sb_load_state():
     """Read this user's stored blob (watchlist/journal/portfolio), cached per session."""
     if "_user_state" in st.session_state:
         return st.session_state["_user_state"]
-    default = {"watchlist": [], "journal": [], "portfolio": []}
+    default = {"watchlist": [], "journal": [], "portfolio": [], "trades": []}
     try:
         c, u = get_sb(), sb_user()
         res = c.table("user_state").select("*").eq("user_id", u["id"]).execute()
@@ -2741,7 +2742,8 @@ def _sb_load_state():
             row = res.data[0]
             default = {"watchlist": row.get("watchlist") or [],
                        "journal": row.get("journal") or [],
-                       "portfolio": row.get("portfolio") or []}
+                       "portfolio": row.get("portfolio") or [],
+                       "trades": row.get("trades") or []}
     except Exception:
         pass
     st.session_state["_user_state"] = default
@@ -2903,6 +2905,35 @@ def delete_journal_entry(ticker):
     df = load_journal()
     df = df[df["Ticker"] != str(ticker).upper().strip()]
     _persist_journal(df)
+
+
+def load_trades():
+    if signed_in():
+        return _sb_load_state().get("trades") or []
+    if TRADES_FILE.exists():
+        try:
+            return json.loads(TRADES_FILE.read_text())
+        except Exception:
+            return []
+    return []
+
+
+def save_trades(trades):
+    if signed_in():
+        _sb_save_field("trades", trades)
+        return
+    try:
+        TRADES_FILE.write_text(json.dumps(trades))
+    except Exception:
+        pass
+
+
+def get_last_price(ticker):
+    """Latest close for a ticker (disk-cached history). None if unavailable."""
+    h = _yf_history(ticker, period="5d")
+    if h is not None and not h.empty and "Close" in h.columns:
+        return safe_float(h["Close"].iloc[-1])
+    return None
 
 
 def compute_alerts(row):
@@ -4610,6 +4641,108 @@ def daily_briefing_page():
     st.caption("Tip: this page reads your saved scan + watchlist. Keep the daily scans running (they do, automatically) and it stays current.")
 
 
+def paper_trading_page():
+    st.title("Paper Trading — Decision Log")
+    st.caption("Log your calls with your reasoning, then watch how they actually perform vs. the market. This measures *your* judgment — the honest way to know if you're ready to risk real money.")
+    st.info("Simulated only — no real money moves. It records your decisions so you can learn from them.")
+    if signed_in():
+        st.caption("💾 Saved to your account.")
+    else:
+        st.caption("⚠️ Sign in (sidebar) to save your trades permanently across devices.")
+
+    trades = load_trades()
+
+    with st.expander("➕ Log a new trade", expanded=not trades):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            tkr = st.text_input("Ticker", "").upper().strip()
+            action = st.selectbox("Action", ["Buy (long)", "Short (sell)"])
+        with c2:
+            default_px = get_last_price(tkr) if tkr else None
+            price = st.number_input("Entry price ($)", min_value=0.0,
+                                    value=float(default_px) if default_px else 0.0, step=1.0,
+                                    help="Auto-filled with the latest price when you type a ticker.")
+            shares = st.number_input("Shares", min_value=0.0, value=10.0, step=1.0)
+        with c3:
+            tdate = st.text_input("Date (YYYY-MM-DD)", today_string())
+            conviction = st.slider("Conviction (1–10)", 1, 10, 6)
+        thesis = st.text_area("Why? (your thesis in one line)", "", height=70)
+        if st.button("Log trade", type="primary"):
+            if not tkr or price <= 0:
+                st.warning("Enter a ticker and a valid entry price.")
+            else:
+                trades.append({"ticker": tkr, "action": action, "price": price, "shares": shares,
+                               "date": tdate, "conviction": conviction, "thesis": thesis})
+                save_trades(trades)
+                st.success(f"Logged {action} {tkr} @ {money(price)}.")
+                st.rerun()
+
+    if not trades:
+        st.info("No trades logged yet — log your first call above.")
+        return
+
+    st.subheader("Your Track Record")
+    rows, returns, excesses, beats, convs = [], [], [], 0, []
+    with st.spinner("Scoring your calls vs. the market..."):
+        for t in trades:
+            tk, entry, d0 = t["ticker"], safe_float(t["price"]), t.get("date", today_string())
+            fwd = get_forward_return(tk, d0, today_string())
+            spy = get_forward_return("SPY", d0, today_string())
+            short = "short" in str(t.get("action", "")).lower()
+            if fwd is None:
+                rows.append({"Ticker": tk, "Action": t.get("action"), "Date": d0,
+                             "Entry": round(entry, 2), "Return %": None, "vs SPY %": None,
+                             "Conviction": t.get("conviction")})
+                continue
+            r = fwd * 100 * (-1 if short else 1)
+            returns.append(r)
+            convs.append((t.get("conviction"), r))
+            ex = None
+            if spy is not None:
+                ex = r - spy * 100
+                excesses.append(ex)
+                if r > spy * 100:
+                    beats += 1
+            rows.append({"Ticker": tk, "Action": t.get("action"), "Date": d0,
+                         "Entry": round(entry, 2), "Current": round(entry * (1 + fwd), 2),
+                         "Return %": round(r, 1), "vs SPY %": round(ex, 1) if ex is not None else None,
+                         "Conviction": t.get("conviction")})
+
+    m1, m2, m3, m4 = st.columns(4)
+    avg = sum(returns) / len(returns) if returns else 0
+    avg_ex = sum(excesses) / len(excesses) if excesses else 0
+    win = len([r for r in returns if r > 0]) / len(returns) * 100 if returns else 0
+    beat_rate = beats / len(excesses) * 100 if excesses else 0
+    m1.metric("Avg Return", f"{avg:+.1f}%")
+    m2.metric("Avg vs SPY", f"{avg_ex:+.1f}%", delta=f"{avg_ex:+.1f}%")
+    m3.metric("Win Rate", f"{win:.0f}%")
+    m4.metric("Beat SPY Rate", f"{beat_rate:.0f}%")
+    st.dataframe(pd.DataFrame(rows), width="stretch")
+
+    # Does your conviction actually predict your results?
+    if len([c for c, _ in convs if c is not None]) >= 4:
+        cdf = pd.DataFrame([(c, r) for c, r in convs if c is not None], columns=["conv", "ret"])
+        ic = cdf["conv"].rank().corr(cdf["ret"].rank())
+        if ic == ic:
+            if ic > 0.2:
+                st.success(f"🟢 Your conviction is predictive (rank corr {ic:.2f}) — your higher-conviction calls have done better. Good sign your judgment adds value.")
+            elif ic < -0.2:
+                st.warning(f"🔴 Your conviction is inversely related to returns ({ic:.2f}) — your most confident calls did worse. Worth reflecting on why.")
+            else:
+                st.info(f"Conviction–return correlation is ~flat ({ic:.2f}) so far — need more trades to tell.")
+
+    with st.expander("Remove a trade"):
+        labels = [f"{i}: {t['ticker']} {t.get('action','')} @ {money(t['price'])} ({t.get('date')})" for i, t in enumerate(trades)]
+        to_del = st.selectbox("Select a trade to delete", ["(none)"] + labels)
+        if to_del != "(none)" and st.button("Delete selected trade"):
+            idx = int(to_del.split(":")[0])
+            trades.pop(idx)
+            save_trades(trades)
+            st.rerun()
+
+    st.caption("This is your personal edge-check: over many logged calls, do you beat SPY, and does your conviction actually track your results? That's what tells you whether to trust yourself with real capital.")
+
+
 def research_journal_page():
     st.title("Research Journal")
     st.caption("Write down *why* you're interested before you buy — then revisit it later. Disciplined investors keep a thesis; it's how you learn whether your reasoning (not just luck) was right.")
@@ -5005,7 +5138,7 @@ def main():
     st.sidebar.divider()
     page = st.sidebar.radio(
         "Choose Page",
-        ["🏠 Daily Briefing", "Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Research Journal", "Backtesting Lab", "Learning Center"]
+        ["🏠 Daily Briefing", "Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Research Journal", "Paper Trading", "Backtesting Lab", "Learning Center"]
     )
     st.sidebar.divider()
     st.sidebar.write("**Goal:** Full quant stock evaluation")
@@ -5038,6 +5171,8 @@ def main():
         strategy_builder_page()
     elif page == "Research Journal":
         research_journal_page()
+    elif page == "Paper Trading":
+        paper_trading_page()
     elif page == "Backtesting Lab":
         backtesting_page()
     else:

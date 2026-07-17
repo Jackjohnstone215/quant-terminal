@@ -6,6 +6,7 @@
 portfolio_manager_ai.csv
 watchlist.csv
 research_journal.csv
+paper_trades.json
 
 # --- Local data cache ---
 .data_cache/
