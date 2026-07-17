@@ -2498,6 +2498,96 @@ def fetch_10k_risk_factors(ticker):
         return None
 
 
+def premortem_read(row, bear=None):
+    """Pre-mortem: 'assume this lost money in a few years — what went wrong?' Rather than an
+    empty template, it flags which failure modes THIS stock's own computed signals most support
+    (valuation re-rating, growth disappointing, moat erosion, balance-sheet stress, cyclical
+    drawdown, cash-flow shortfall), each tagged Elevated/Moderate/Lower, plus idiosyncratic risks
+    lifted from the Biggest Risk field and bear case. Public/textbook reasoning, not a model.
+    Returns {'headline': str, 'modes': [(mode, emoji, level, text)], 'idiosyncratic': [str]}."""
+    def f(k):
+        return safe_float(row.get(k))
+
+    upside, pe = f("Upside %"), f("P/E")
+    revg = f("Revenue Growth %")
+    roic, gm = f("ROIC Proxy %"), f("Gross Margin %")
+    dte, ndte = f("Debt/Equity"), f("Net Debt/EBITDA")
+    vol, mdd, beta = f("Volatility %"), f("Max Drawdown %"), f("Beta")
+    fcfy = f("FCF Yield %")
+
+    EMO = {"Elevated": "🔴", "Moderate": "🟡", "Lower": "⚪"}
+    modes = []
+
+    def add(mode, level, text):
+        modes.append((mode, EMO[level], level, text))
+
+    # 1) Valuation re-rating / multiple compression
+    if upside is not None and upside <= -15:
+        add("Valuation re-rating", "Elevated", f"The model puts fair value ~{abs(upside):.0f}% below today's price{f' (P/E ~{pe:.0f})' if pe else ''}. If the multiple compresses toward fundamentals, price falls even if the business does fine — the classic way to lose on a good company bought at a bad price.")
+    elif (upside is not None and upside <= 5) or (pe is not None and pe >= 30):
+        add("Valuation re-rating", "Moderate", f"Limited margin of safety{f' and a rich P/E (~{pe:.0f})' if pe and pe >= 30 else ''} — leaves little cushion if sentiment or rates turn against the multiple.")
+    else:
+        add("Valuation re-rating", "Lower", "Trades at or below the model's fair value, so multiple compression is a smaller risk than for expensive names.")
+
+    # 2) Growth disappoints
+    if revg is not None and revg >= 20:
+        add("Growth disappoints", "Elevated", f"Revenue is growing ~{revg:.0f}% and a lot of that is likely priced in. Growth stocks de-rate hard when the top line decelerates — watch for the first sign of slowing.")
+    elif revg is not None and revg >= 8:
+        add("Growth disappoints", "Moderate", f"Solid ~{revg:.0f}% growth supports the story; a stall would remove a key pillar of the thesis.")
+    else:
+        add("Growth disappoints", "Lower", "Expectations already assume little growth, so there's less growth to disappoint (the flip side: stagnation is the base case).")
+
+    # 3) Competitive / margin erosion (moat)
+    if (roic is not None and roic < 8) or (gm is not None and gm < 25):
+        add("Competitive erosion", "Elevated", f"Returns on capital{f' (~{roic:.0f}%)' if roic is not None else ''} and/or margins{f' (~{gm:.0f}% gross)' if gm is not None else ''} are already thin — a competitive or cost shock has little buffer to absorb before profits are hit.")
+    elif (roic is not None and roic < 15) or (gm is not None and gm < 40):
+        add("Competitive erosion", "Moderate", "Decent but not fortress-level economics — a determined competitor or pricing pressure could grind margins down over time.")
+    else:
+        add("Competitive erosion", "Lower", f"High returns on capital{f' (~{roic:.0f}%)' if roic is not None else ''} and strong margins suggest a real moat — erosion is a slower-burn risk here.")
+
+    # 4) Balance-sheet stress in a downturn
+    if (dte is not None and dte >= 150) or (ndte is not None and ndte >= 3):
+        add("Balance-sheet stress", "Elevated", f"Leverage is high{f' (debt/equity ~{dte:.0f}%)' if dte else ''}{f' (net debt/EBITDA ~{ndte:.1f})' if ndte is not None else ''} — a revenue or rate shock could turn a business problem into a solvency one. Leverage is what turns drawdowns into permanent losses.")
+    elif (dte is not None and dte >= 80) or (ndte is not None and ndte >= 1.5):
+        add("Balance-sheet stress", "Moderate", "Moderate leverage — manageable in normal times, but it amplifies the downside if earnings wobble.")
+    else:
+        add("Balance-sheet stress", "Lower", "A conservative balance sheet gives the business staying power through a downturn.")
+
+    # 5) Cyclical / market drawdown
+    if (vol is not None and vol >= 40) or (mdd is not None and mdd <= -50) or (beta is not None and beta >= 1.5):
+        add("Cyclical drawdown", "Elevated", f"High volatility{f' (~{vol:.0f}%)' if vol else ''}{f', beta ~{beta:.1f}' if beta else ''} and a deep historical drawdown{f' (~{mdd:.0f}%)' if mdd else ''} — this name can fall hard in a market or cycle downturn regardless of the fundamentals.")
+    elif (vol is not None and vol >= 25) or (beta is not None and beta >= 1.1):
+        add("Cyclical drawdown", "Moderate", "Above-market volatility — expect sharper swings than the index; make sure the position size lets you hold through them.")
+    else:
+        add("Cyclical drawdown", "Lower", "Relatively low volatility — less prone to violent drawdowns, though nothing is immune in a broad selloff.")
+
+    # 6) Cash-flow shortfall
+    if fcfy is not None and fcfy < 0:
+        add("Cash-flow shortfall", "Elevated", "Free cash flow is negative — the company is consuming cash. If access to capital tightens, that becomes an existential problem rather than an inconvenience.")
+    elif fcfy is not None and fcfy < 2:
+        add("Cash-flow shortfall", "Moderate", f"Thin free-cash-flow yield (~{fcfy:.1f}%) — little internal cash cushion to fund dividends, buybacks, or a rough patch.")
+    elif fcfy is not None:
+        add("Cash-flow shortfall", "Lower", f"Healthy free-cash-flow generation (~{fcfy:.1f}% yield) funds the business from within.")
+
+    order = {"Elevated": 0, "Moderate": 1, "Lower": 2}
+    modes.sort(key=lambda m: order[m[2]])
+
+    idio = []
+    br = row.get("Biggest Risk")
+    if br and str(br).strip():
+        idio.append(f"Model's flagged biggest risk: **{br}**.")
+    for b in (bear or [])[:4]:
+        idio.append(str(b))
+
+    elevated = [m[0] for m in modes if m[2] == "Elevated"]
+    if elevated:
+        headline = ("Given this stock's own signals, the most likely ways to lose money are **"
+                    + "**, **".join(elevated) + "**. Assume one of these plays out — is your thesis (and position size) ready for it?")
+    else:
+        headline = ("No single failure mode screams loud in the data. The point of a pre-mortem is to pick the one that WOULD hurt most and pre-commit to what you'd do — then log it as a kill criterion.")
+    return {"headline": headline, "modes": modes, "idiosyncratic": idio}
+
+
 def fetch_fmp_fundamentals(ticker):
     """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
     DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
@@ -5464,6 +5554,21 @@ def stock_deep_dive():
                     st.caption("Auto-extracted from the filing (best-effort across formats). Always confirm against the source filing.")
                 else:
                     st.caption("The Risk Factors section couldn't be isolated cleanly from this filing's format — open the full 10-K above and see **Item 1A. Risk Factors**.")
+
+            st.divider()
+            st.subheader("🔎 Pre-Mortem")
+            st.caption("Assume it's a few years out and this position lost money — what went wrong? Naming the failure modes *before* you buy is one of the best-known guards against overconfidence. Below, the app flags which failure modes its own signals most support.")
+            pm = premortem_read(row, bear)
+            st.write(pm["headline"])
+            for mode, emoji, level, text in pm["modes"]:
+                with st.container(border=True):
+                    st.markdown(f"{emoji} **{mode}** · {level}")
+                    st.write(text)
+            if pm["idiosyncratic"]:
+                st.markdown("**Company-specific watch-items**")
+                for it in pm["idiosyncratic"]:
+                    st.markdown(f"- {it}")
+            st.caption("Turn the failure mode that would hurt most into a **kill criterion** in the Research Journal — pre-commit to what would make you exit. A reasoning aid, not financial advice.")
         with tab6:
             st.subheader("🤖 AI Research Analyst")
             st.caption("An LLM turns the quant scores + headlines above into a plain-English memo. Research aid only — not financial advice.")
