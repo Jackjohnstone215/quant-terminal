@@ -2415,6 +2415,89 @@ def beneish_mscore(curr, prior):
     return {"m": m, "flag": flag}
 
 
+# SEC's firewall 403s any request whose User-Agent lacks an email-format contact. example.com
+# is IANA-reserved for placeholders, so this identifies the app without exposing a real address.
+SEC_UA = {"User-Agent": "quant-terminal research app quant-terminal@example.com"}
+
+
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def _sec_ticker_map():
+    """Upper-case ticker → zero-padded 10-digit CIK, from SEC's public file. Cached a week.
+    Returns {} on any failure (so callers degrade to 'no filing' rather than erroring)."""
+    try:
+        req = urllib.request.Request("https://www.sec.gov/files/company_tickers.json", headers=SEC_UA)
+        with urllib.request.urlopen(req, timeout=25) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        return {v["ticker"].upper(): str(v["cik_str"]).zfill(10) for v in data.values()}
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def fetch_10k_risk_factors(ticker):
+    """Latest 10-K from SEC EDGAR: filing date, direct link, and — when it can be reliably
+    isolated — the Risk Factors section text (management's own stated risks). Public primary
+    source, no LLM. Returns {'date','url','company','section'(str|None),'words'} or None.
+
+    The section extractor is best-effort across varied filing formats: it anchors on the real
+    'Item 1A. Risk Factors' heading (skipping the table-of-contents row via a lookahead for a
+    nearby 'Item 1B'), runs to the next item, ranks candidates by risk-word density, and passes
+    a sanity gate on the intro. When extraction isn't confident, 'section' is None and the caller
+    shows just the filing link — never garbage."""
+    import re
+    from html import unescape
+    try:
+        cik = _sec_ticker_map().get(str(ticker).upper())
+        if not cik:
+            return None
+        req = urllib.request.Request(f"https://data.sec.gov/submissions/CIK{cik}.json", headers=SEC_UA)
+        with urllib.request.urlopen(req, timeout=25) as r:
+            sub = json.loads(r.read().decode("utf-8", "replace"))
+        rec = sub.get("filings", {}).get("recent", {})
+        forms = rec.get("form", [])
+        idx = next((i for i, f in enumerate(forms) if f == "10-K"), None)
+        if idx is None:
+            return None
+        acc = rec["accessionNumber"][idx].replace("-", "")
+        doc = rec["primaryDocument"][idx]
+        url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc}/{doc}"
+        out = {"date": rec["filingDate"][idx], "url": url,
+               "company": sub.get("name", ticker), "section": None, "words": 0}
+
+        req2 = urllib.request.Request(url, headers=SEC_UA)
+        with urllib.request.urlopen(req2, timeout=30) as r:
+            html_doc = r.read().decode("utf-8", "replace")
+        h2 = re.sub(r"(?i)<br[^>]*>", "\n", html_doc)
+        h2 = re.sub(r"(?i)</(p|div|tr|li|h[1-6])>", "\n", h2)
+        text = unescape(re.sub(r"<[^>]+>", " ", h2))
+        text = re.sub(r"[ \t\r\f\v]+", " ", text)
+        full = "\n".join(ln.strip() for ln in text.split("\n"))
+        low = full.lower()
+        starts = [m.start() for m in re.finditer(r"item\s*1a\s*[\.\-–—:]*\s*risk\s*factors", full, re.I)]
+        ends = sorted(m.start() for m in re.finditer(r"item\s*1b|item\s*1c|item\s*2\s*[\.\-–—:]*\s*propert", low))
+        best, best_score = None, -1
+        rw = ("adversely", "could", "may ", "risk", "uncertain", "harm", "fail", "decline")
+        for s in starts:
+            nxt = low[s + 10:s + 600]
+            if "item 1b" in nxt or "item 1c" in nxt or "item 2" in nxt:
+                continue  # table-of-contents row, not the real heading
+            e = next((x for x in ends if x > s + 2000), None)
+            if not e or not (5000 < e - s < 300000):
+                continue
+            score = sum(low[s:s + 3000].count(w) for w in rw)
+            if score > best_score:
+                best_score, best = score, (s, e)
+        if best:
+            sec = full[best[0]:best[1]].strip()
+            intro = sec[:400].lower()
+            if any(w in intro for w in ("could", "adversely", "materially", "following", "risks")) and "item 1b" not in intro:
+                out["section"] = sec
+                out["words"] = len(sec.split())
+        return out
+    except Exception:
+        return None
+
+
 def fetch_fmp_fundamentals(ticker):
     """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
     DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
@@ -5360,6 +5443,27 @@ def stock_deep_dive():
             st.write(f"**Action:** {row['Research Action']}")
             st.write(f"**Suggested hold:** {row['Suggested Hold']}")
             st.write(f"**Suggested sell/trim target:** {money(row['Sell Target'])}")
+
+            st.divider()
+            st.subheader("📄 Risk Factors — latest 10-K")
+            st.caption("Straight from the company's most recent annual report on SEC EDGAR — the risks management itself discloses. The strongest primary source for the bear case. Read them in their own words.")
+            rf = fetch_10k_risk_factors(ticker)
+            if not rf:
+                st.info("Couldn't retrieve a 10-K for this ticker from SEC EDGAR (it may be a foreign filer that files 20-F, an ETF, or not on EDGAR).")
+            else:
+                st.markdown(f"**Latest 10-K filed {rf['date']}** · [Open full filing on SEC.gov ↗]({rf['url']})")
+                if rf["section"]:
+                    preview_cap = 16000
+                    body = rf["section"]
+                    truncated = len(body) > preview_cap
+                    shown = body[:preview_cap] + (" …" if truncated else "")
+                    with st.expander(f"Read the Risk Factors section (~{rf['words']:,} words)", expanded=False):
+                        st.markdown(f"> {shown}")
+                        if truncated:
+                            st.caption(f"Showing the first ~{preview_cap:,} characters — [read the rest in the full filing ↗]({rf['url']}).")
+                    st.caption("Auto-extracted from the filing (best-effort across formats). Always confirm against the source filing.")
+                else:
+                    st.caption("The Risk Factors section couldn't be isolated cleanly from this filing's format — open the full 10-K above and see **Item 1A. Risk Factors**.")
         with tab6:
             st.subheader("🤖 AI Research Analyst")
             st.caption("An LLM turns the quant scores + headlines above into a plain-English memo. Research aid only — not financial advice.")
