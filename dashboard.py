@@ -3238,7 +3238,11 @@ def save_watchlist(tickers):
     return clean
 
 
-JOURNAL_COLS = ["Ticker", "My Rating", "My Target", "Thesis", "Notes", "Updated"]
+# Structured thesis record. New fields are backward-compatible: load_journal() backfills any
+# column an older stored entry is missing, so pre-upgrade CSV/Supabase rows still load cleanly.
+JOURNAL_COLS = ["Ticker", "My Rating", "Conviction", "My Target", "Entry Price",
+                "Thesis", "Catalysts", "Key Risks", "Kill Criteria", "Notes",
+                "Review By", "Updated"]
 
 
 def load_journal():
@@ -3271,17 +3275,25 @@ def _persist_journal(df):
             pass
 
 
-def save_journal_entry(ticker, rating, target, thesis, notes):
+def save_journal_entry(ticker, fields):
+    """Upsert a thesis entry. `fields` is a dict of any JOURNAL_COLS values (except Ticker /
+    Updated). When editing an existing ticker, any column NOT supplied is preserved from the
+    prior entry, so a partial save never silently wipes a field. `Updated` is stamped now."""
     ticker = str(ticker).upper().strip()
     if not ticker:
         return
     df = load_journal()
-    df = df[df["Ticker"] != ticker]   # replace any existing entry for this ticker
-    new = pd.DataFrame([{
-        "Ticker": ticker, "My Rating": rating, "My Target": target,
-        "Thesis": thesis, "Notes": notes, "Updated": today_string(),
-    }])
-    df = pd.concat([new, df], ignore_index=True)
+    prior = {}
+    if not df.empty and ticker in df["Ticker"].astype(str).values:
+        prior = df[df["Ticker"].astype(str) == ticker].iloc[0].to_dict()
+    df = df[df["Ticker"].astype(str) != ticker]   # drop the old row, we re-add below
+    rec = {c: str(prior.get(c, "") or "") for c in JOURNAL_COLS}
+    for k, v in fields.items():
+        if k in JOURNAL_COLS:
+            rec[k] = "" if v is None else str(v)
+    rec["Ticker"] = ticker
+    rec["Updated"] = today_string()
+    df = pd.concat([pd.DataFrame([rec]), df], ignore_index=True)
     _persist_journal(df)
 
 
@@ -5290,63 +5302,144 @@ def paper_trading_page():
     st.caption("This is your personal edge-check: over many logged calls, do you beat SPY, and does your conviction actually track your results? That's what tells you whether to trust yourself with real capital.")
 
 
+def _thesis_perf(ticker, entry_price, target):
+    """(current_price, pct_since_entry, pct_to_target) for a thesis — any may be None. Current
+    price uses the disk-cached daily history, so rendering the list costs no extra live calls."""
+    cur = get_last_price(ticker)
+    ep = safe_float(entry_price)
+    tg = safe_float(target)
+    pct_since = ((cur - ep) / ep * 100) if (cur is not None and ep) else None
+    pct_to_tg = ((tg - cur) / cur * 100) if (cur is not None and tg) else None
+    return cur, pct_since, pct_to_tg
+
+
 def research_journal_page():
     st.title("Research Journal")
-    st.caption("Write down *why* you're interested before you buy — then revisit it later. Disciplined investors keep a thesis; it's how you learn whether your reasoning (not just luck) was right.")
+    st.caption("Write your *thesis* before you buy — the bull case, catalysts, the risks, and the kill criteria that would prove you wrong — then revisit it. Disciplined investors pre-commit to what has to go right and what would make them exit; it's how you learn whether your reasoning (not luck) was right.")
 
     journal = load_journal()
-    existing_tickers = journal["Ticker"].tolist() if not journal.empty else []
+    existing_tickers = journal["Ticker"].astype(str).tolist() if not journal.empty else []
 
-    with st.expander("✍️ Add / edit an entry", expanded=True):
+    with st.expander("✍️ Add / edit a thesis", expanded=True):
         ticker = st.text_input("Ticker", "").upper().strip()
         prefill = {}
-        if ticker and ticker in existing_tickers:
-            prefill = journal[journal["Ticker"] == ticker].iloc[0].to_dict()
-            st.caption(f"Editing existing entry (last updated {prefill.get('Updated','')}).")
+        editing = bool(ticker) and ticker in existing_tickers
+        if editing:
+            prefill = journal[journal["Ticker"].astype(str) == ticker].iloc[0].to_dict()
+            st.caption(f"Editing existing thesis (last updated {prefill.get('Updated','')}).")
 
-        # light context from the saved scan (free — no API call)
+        # light context from the saved scan (free — no API call); also seeds the entry price
+        snap_price = None
         if ticker:
             scan = load_sp500_scores()
             if not scan.empty and ticker in scan["Ticker"].astype(str).str.upper().values:
                 r = scan[scan["Ticker"].astype(str).str.upper() == ticker].iloc[0]
+                snap_price = safe_float(r.get("Price"))
                 st.caption(f"📊 Engine snapshot: {ticker} · price {money(r.get('Price'))} · fair value {money(r.get('Fair Value'))} · conviction {r.get('Conviction Score','?')}/100 · {r.get('Tier','')}")
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
             ratings = ["", "Buy", "Accumulate", "Watch", "Pass", "Sell"]
-            cur_rating = prefill.get("My Rating", "")
+            cur_rating = str(prefill.get("My Rating", "") or "")
             rating = st.selectbox("My rating", ratings, index=ratings.index(cur_rating) if cur_rating in ratings else 0)
         with c2:
-            target = st.text_input("My price target (optional)", str(prefill.get("My Target", "") or ""))
-        thesis = st.text_area("Thesis — why is this interesting? (bull case, catalysts, what has to go right)",
-                              str(prefill.get("Thesis", "") or ""), height=120)
-        notes = st.text_area("Ongoing notes — risks, updates, what would change your mind",
-                             str(prefill.get("Notes", "") or ""), height=120)
-        if st.button("💾 Save entry", type="primary"):
+            convs = ["", "Low", "Medium", "High"]
+            cur_conv = str(prefill.get("Conviction", "") or "")
+            conviction = st.selectbox("Conviction", convs, index=convs.index(cur_conv) if cur_conv in convs else 0)
+        with c3:
+            target = st.text_input("Price target", str(prefill.get("My Target", "") or ""))
+
+        # Entry price: the price WHEN the thesis was written. Auto-seeded from the engine
+        # snapshot (else a live close), editable, and preserved on later edits so the
+        # performance-since-thesis read always measures from the original call.
+        default_entry = str(prefill.get("Entry Price", "") or "")
+        if not editing and not default_entry and ticker:
+            ap = snap_price if snap_price is not None else get_last_price(ticker)
+            default_entry = f"{ap:.2f}" if ap is not None else ""
+        entry_price = st.text_input("Entry price (when thesis written — auto-filled, editable)", default_entry)
+
+        thesis = st.text_area("Thesis — the bull case. What has to go right for this to work?",
+                              str(prefill.get("Thesis", "") or ""), height=110)
+        catalysts = st.text_area("Catalysts — specific events/triggers and rough timing (earnings, launches, margin inflection…)",
+                                 str(prefill.get("Catalysts", "") or ""), height=80)
+        risks = st.text_area("Key risks — what could break the thesis?",
+                             str(prefill.get("Key Risks", "") or ""), height=80)
+        kill = st.text_area("Kill criteria — the specific conditions under which you'd admit you're wrong and sell",
+                            str(prefill.get("Kill Criteria", "") or ""), height=80)
+        notes = st.text_area("Ongoing notes — updates as the story develops",
+                             str(prefill.get("Notes", "") or ""), height=80)
+
+        default_review = datetime.now().date() + timedelta(days=90)
+        prev_review = str(prefill.get("Review By", "") or "")
+        if prev_review:
+            try:
+                default_review = datetime.strptime(prev_review, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        review_by = st.date_input("Review by — when will you revisit this thesis?", value=default_review)
+
+        if st.button("💾 Save thesis", type="primary"):
             if not ticker:
                 st.warning("Enter a ticker first.")
             else:
-                save_journal_entry(ticker, rating, target, thesis, notes)
-                st.success(f"Saved journal entry for {ticker}.")
+                save_journal_entry(ticker, {
+                    "My Rating": rating, "Conviction": conviction, "My Target": target,
+                    "Entry Price": entry_price, "Thesis": thesis, "Catalysts": catalysts,
+                    "Key Risks": risks, "Kill Criteria": kill, "Notes": notes,
+                    "Review By": review_by.strftime("%Y-%m-%d") if review_by else "",
+                })
+                st.success(f"Saved thesis for {ticker}.")
                 st.rerun()
 
     st.divider()
     journal = load_journal()
     if journal.empty:
-        st.info("No journal entries yet. Add your first thesis above.")
+        st.info("No theses yet. Write your first one above.")
         return
 
-    st.subheader(f"Your journal ({len(journal)} entries)")
+    st.subheader(f"Your theses ({len(journal)} entries)")
+    today = today_string()
     for _, e in journal.iterrows():
-        header = f"**{e['Ticker']}**" + (f" — {e['My Rating']}" if e['My Rating'] else "") + (f" · target {e['My Target']}" if str(e['My Target']).strip() else "")
+        tkr = str(e["Ticker"])
+        rating = str(e.get("My Rating", "") or "")
+        conv = str(e.get("Conviction", "") or "")
+        header = f"**{tkr}**"
+        if rating:
+            header += f" — {rating}"
+        if conv:
+            header += f" · {conv} conviction"
+        if str(e.get("My Target", "") or "").strip():
+            header += f" · target {e['My Target']}"
         with st.container(border=True):
-            st.markdown(f"{header}  \n<span style='color:#8a94a6;font-size:0.85rem'>updated {e['Updated']}</span>", unsafe_allow_html=True)
-            if str(e["Thesis"]).strip():
-                st.markdown(f"**Thesis:** {e['Thesis']}")
-            if str(e["Notes"]).strip():
-                st.markdown(f"**Notes:** {e['Notes']}")
-            if st.button("🗑️ Delete", key=f"del_{e['Ticker']}"):
-                delete_journal_entry(e["Ticker"])
+            st.markdown(f"{header}  \n<span style='color:#8a94a6;font-size:0.85rem'>updated {e.get('Updated','')}</span>", unsafe_allow_html=True)
+
+            # Performance since thesis (measured from the entry price you logged)
+            cur, pct_since, pct_to_tg = _thesis_perf(tkr, e.get("Entry Price"), e.get("My Target"))
+            if safe_float(e.get("Entry Price")) is not None or cur is not None:
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Entry", money(e.get("Entry Price")))
+                m2.metric("Now", money(cur),
+                          f"{pct_since:+.1f}% since thesis" if pct_since is not None else None)
+                m3.metric("To target", f"{pct_to_tg:+.1f}%" if pct_to_tg is not None else "—")
+
+            review = str(e.get("Review By", "") or "").strip()
+            if review and review <= today:
+                st.warning(f"🔔 Review due — you set this to revisit by {review}.")
+            elif review:
+                st.caption(f"🗓️ Review by {review}")
+
+            def _sec(label, key, icon=""):
+                val = str(e.get(key, "") or "").strip()
+                if val:
+                    st.markdown(f"{icon}**{label}:** {val}")
+            _sec("Thesis", "Thesis")
+            _sec("Catalysts", "Catalysts")
+            _sec("Key risks", "Key Risks")
+            _sec("Kill criteria", "Kill Criteria", "🛑 ")
+            _sec("Notes", "Notes")
+
+            if st.button("🗑️ Delete", key=f"del_{tkr}"):
+                delete_journal_entry(tkr)
                 st.rerun()
 
     st.divider()
