@@ -891,9 +891,23 @@ def get_market_news(hours_back=10):
     return sorted(unique, key=lambda x: (x["Importance"], x["Published"]), reverse=True)
 
 
+RISK_FREE_RATE = 0.043     # ~10-yr Treasury
+EQUITY_RISK_PREMIUM = 0.05  # long-run equity premium over risk-free
+
+
+def capm_rate(beta):
+    """Discount rate from CAPM: risk_free + beta × equity-risk-premium, clamped to a sane
+    band. A high-beta stock is discounted harder (worth less), a defensive one less so —
+    far more principled than a fixed rate."""
+    b = safe_float(beta, 1.0)
+    if b is None:
+        b = 1.0
+    b = max(0.5, min(2.2, b))
+    return max(0.075, min(0.14, RISK_FREE_RATE + b * EQUITY_RISK_PREMIUM))
+
+
 def dcf_from_params(fcf_ps, g1, r, g_term=0.025, years=5):
-    """Core 2-stage DCF: grow FCF/share at g1 for `years`, then a perpetuity at g_term,
-    all discounted at r. Returns value per share, or None if inputs are invalid."""
+    """Simple 2-stage DCF (used by the interactive Valuation Lab)."""
     fcf_ps = safe_float(fcf_ps)
     if fcf_ps is None or fcf_ps <= 0 or r is None or g_term is None or r <= g_term:
         return None
@@ -906,21 +920,64 @@ def dcf_from_params(fcf_ps, g1, r, g_term=0.025, years=5):
     return pv
 
 
-def _dcf_fair_value(fcf_ps, growth_rate, risk_score, years=5, g_term=0.025):
-    """Engine DCF: caps stage-1 growth at 13% and sets the discount rate by risk, then
-    calls the core DCF. Returns None for companies with no positive free cash flow."""
-    g1 = min(max(safe_float(growth_rate, 0.04) or 0.04, 0.0), 0.13)
-    r = 0.09 if safe_float(risk_score, 50) >= 45 else 0.11
-    return dcf_from_params(fcf_ps, g1, r, g_term=g_term, years=years)
+def dcf_3stage(fcf_ps, g_high, r, g_term=0.025, high_years=5, fade_years=5):
+    """3-stage DCF: `high_years` at g_high, then a linear fade to g_term over `fade_years`,
+    then a Gordon-growth terminal — the realistic shape (few firms grow fast forever)."""
+    fcf_ps = safe_float(fcf_ps)
+    if fcf_ps is None or fcf_ps <= 0 or r is None or r <= g_term:
+        return None
+    pv, cf, yr = 0.0, fcf_ps, 0
+    for _ in range(high_years):
+        yr += 1
+        cf *= (1 + g_high)
+        pv += cf / ((1 + r) ** yr)
+    for i in range(1, fade_years + 1):
+        g = g_high + (g_term - g_high) * (i / fade_years)
+        yr += 1
+        cf *= (1 + g)
+        pv += cf / ((1 + r) ** yr)
+    terminal = cf * (1 + g_term) / (r - g_term)
+    pv += terminal / ((1 + r) ** yr)
+    return pv
+
+
+def _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta=None):
+    """Engine DCF: CAPM discount rate (from beta) + a 3-stage growth profile with stage-1
+    growth from the company's own growth rate (capped). Returns None if no positive FCF."""
+    g1 = min(max(safe_float(growth_rate, 0.05) or 0.05, 0.0), 0.16)
+    return dcf_3stage(fcf_ps, g1, capm_rate(beta))
+
+
+def reverse_dcf_growth(price, fcf_ps, beta):
+    """Solve for the stage-1 FCF growth rate the CURRENT PRICE implies (3-stage DCF, CAPM
+    rate). Answers 'what does the market expect?' — compare it to reality to judge the price."""
+    price, fcf_ps = safe_float(price), safe_float(fcf_ps)
+    if not price or not fcf_ps or fcf_ps <= 0:
+        return None
+    r = capm_rate(beta)
+    lo, hi = -0.10, 0.50
+    if dcf_3stage(fcf_ps, hi, r) < price:   # even 50% growth can't justify it
+        return None
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        v = dcf_3stage(fcf_ps, mid, r)
+        if v is None:
+            return None
+        if v < price:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
 
 
 def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth_score,
-                        cash_flow_score, risk_score, growth_rate, high_52, low_52):
+                        cash_flow_score, risk_score, growth_rate, high_52, low_52,
+                        beta=None, dividend_yield=None):
     """Blend several valuation methods into an honest fair-value range.
 
-    Each method is capped to a sane band around the current price (so a low-PEG denominator
-    can't explode the estimate), then the CENTRAL value is the median (robust to outliers)
-    and the range is the min/max of the capped methods."""
+    Methods: justified P/E, EV/FCF, a CAPM-discounted 3-stage DCF, PEG, 52-week midpoint,
+    and (for payers) a Dividend Discount Model. Each is capped to a sane band around price,
+    then the CENTRAL value is the median (robust to outliers)."""
     price = safe_float(price)
     if not price or price <= 0:
         return {"central": None, "low": None, "high": None, "methods": []}
@@ -947,9 +1004,18 @@ def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth
             fair_ev_fcf = 14
         methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
 
-    dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score)
+    dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta)
     if dcf:
-        methods.append(("DCF", dcf))
+        methods.append(("DCF (3-stage, CAPM)", dcf))
+
+    # Dividend Discount Model (Gordon growth) — for dividend payers
+    dy = safe_float(dividend_yield)
+    if dy and dy > 0.001:
+        r = capm_rate(beta)
+        g = min(max(safe_float(growth_rate, 0.02) or 0.02, 0.0), r - 0.005, 0.08)
+        if r > g:
+            d1 = (dy * price) * (1 + g)
+            methods.append(("Dividend (DDM)", d1 / (r - g)))
 
     peg = safe_float(peg)
     if peg and peg > 0:
@@ -1818,6 +1884,7 @@ def get_quant_score(ticker):
         price, pe, fcf_per_share, ev_to_fcf, peg,
         quality_score, growth_score, cash_flow_score, risk_score,
         revenue_growth, high_52, low_52,
+        beta=beta, dividend_yield=dividend_yield,
     )
     fair_value = fv["central"] if fv["central"] else price
     fair_value_low = fv["low"]
@@ -3886,6 +3953,25 @@ def stock_deep_dive():
                 hist_fig.update_xaxes(gridcolor=CHART_GRID)
                 st.plotly_chart(_style_fig(hist_fig, height=300), width="stretch")
                 st.caption("⚠️ 'Cheap vs its own history' only helps if the business hasn't deteriorated — a falling multiple can be justified. Cross-check with the 5-year trends tab.")
+
+            st.divider()
+            st.markdown("### Reverse DCF — what growth is priced in?")
+            st.caption("Instead of guessing fair value, this solves for the FCF growth rate the *current price* already assumes. If that's higher than the company can realistically deliver, the stock is expensive.")
+            fcf_ps_dd = (safe_float(row.get("FCF Yield %"), 0) / 100) * safe_float(row.get("Price"), 0)
+            implied = reverse_dcf_growth(row.get("Price"), fcf_ps_dd, row.get("Beta"))
+            if implied is None:
+                st.caption("Reverse DCF needs positive free cash flow — not meaningful for this stock.")
+            else:
+                hist_g = safe_float(row.get("Revenue Growth %"))
+                rr = capm_rate(row.get("Beta"))
+                st.write(f"At today's price, the market is pricing in **~{implied*100:.0f}%/yr** free-cash-flow growth for the next 5 years (discounting at a {rr*100:.1f}% CAPM rate).")
+                if hist_g is not None:
+                    if implied * 100 > hist_g + 8:
+                        st.warning(f"🔴 That's **well above** its recent revenue growth (~{hist_g:.0f}%). The price assumes acceleration — a high bar to clear.")
+                    elif implied * 100 < hist_g - 5:
+                        st.success(f"🟢 That's **below** its recent revenue growth (~{hist_g:.0f}%). The market is pricing in a slowdown — potential value if growth holds.")
+                    else:
+                        st.info(f"That's roughly in line with its recent revenue growth (~{hist_g:.0f}%) — the price looks reasonable on growth expectations.")
         with tab3:
             st.subheader("Quality + Health")
             health_df = pd.DataFrame([
