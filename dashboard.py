@@ -1004,10 +1004,58 @@ def reverse_dcf_growth(price, fcf_ps, beta):
     return (lo + hi) / 2
 
 
+def _cost_of_debt(net_debt_to_ebitda):
+    """Pre-tax cost of debt ≈ risk-free + a credit spread that widens with leverage."""
+    spread = min(max(0.010 + (safe_float(net_debt_to_ebitda, 1.0) or 1.0) * 0.006, 0.010), 0.06)
+    return RISK_FREE_RATE + spread
+
+
+def wacc(beta, market_cap, total_debt, net_debt_to_ebitda, tax=0.21):
+    """Weighted-average cost of capital: blends cost of equity (CAPM) and after-tax cost of
+    debt by capital-structure weights. Lower than cost of equity for levered firms — which
+    correctly raises their intrinsic value (the debt tax shield)."""
+    E = safe_float(market_cap)
+    if not E or E <= 0:
+        return None
+    D = max(safe_float(total_debt, 0.0) or 0.0, 0.0)
+    V = E + D
+    re, rd = capm_rate(beta), _cost_of_debt(net_debt_to_ebitda)
+    return (E / V) * re + (D / V) * rd * (1 - tax)
+
+
+def fcff_wacc_value(fcf_ps, price, market_cap, total_debt, total_cash, beta,
+                    net_debt_to_ebitda, growth_rate, roe=None, payout=None, tax=0.21):
+    """Enterprise DCF: value FCFF (free cash flow to the FIRM) at WACC → enterprise value →
+    subtract net debt → equity value per share. The right approach for heavily-levered
+    non-financials, where cost-of-equity FCFE DCF understates the value of cheap debt."""
+    fcf_ps, price, mc = safe_float(fcf_ps), safe_float(price), safe_float(market_cap)
+    if not fcf_ps or fcf_ps <= 0 or not price or not mc or mc <= 0:
+        return None
+    shares = mc / price
+    td = max(safe_float(total_debt, 0.0) or 0.0, 0.0)
+    tc = max(safe_float(total_cash, 0.0) or 0.0, 0.0)
+    # FCFF ≈ FCFE + after-tax interest (add back cash paid to debt holders)
+    fcfe_total = fcf_ps * shares
+    fcff_total = fcfe_total + td * _cost_of_debt(net_debt_to_ebitda) * (1 - tax)
+    w = wacc(beta, mc, td, net_debt_to_ebitda, tax)
+    if w is None or w <= 0.025:
+        return None
+    observed = max(safe_float(growth_rate, 0.05) or 0.05, 0.0)
+    sg = sustainable_growth(roe, payout)
+    g1 = min(observed, max(sg, 0.0) + 0.03) if sg is not None else observed
+    g1 = min(max(g1, 0.0), 0.16)
+    ev_ps = dcf_3stage(fcff_total / shares, g1, w, g_term=min(0.025, RISK_FREE_RATE))
+    if ev_ps is None:
+        return None
+    equity_value = ev_ps * shares - (td - tc)   # EV − net debt = equity value
+    return equity_value / shares if shares else None
+
+
 def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth_score,
                         cash_flow_score, risk_score, growth_rate, high_52, low_52,
                         beta=None, dividend_yield=None, roe=None, payout=None,
-                        sector=None, price_to_book=None):
+                        sector=None, price_to_book=None, market_cap=None, total_debt=None,
+                        total_cash=None, net_debt_to_ebitda=None):
     """Blend several valuation methods into an honest fair-value range.
 
     Sector-aware: banks/insurers can't be valued on free cash flow, so for financials we
@@ -1041,9 +1089,18 @@ def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth
                 fair_ev_fcf = 14
             methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
 
-        dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta, roe, payout)
-        if dcf:
-            methods.append(("DCF (3-stage, CAPM)", dcf))
+        # Heavily-levered non-financials → FCFF discounted at WACC (captures the debt tax
+        # shield). Lightly-levered → the simpler FCFE / cost-of-equity DCF.
+        ndte = safe_float(net_debt_to_ebitda)
+        if ndte is not None and ndte > 1.5:
+            dcf = fcff_wacc_value(fcf_ps, price, market_cap, total_debt, total_cash, beta,
+                                  ndte, growth_rate, roe, payout)
+            if dcf:
+                methods.append(("DCF (FCFF/WACC)", dcf))
+        else:
+            dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta, roe, payout)
+            if dcf:
+                methods.append(("DCF (3-stage, CAPM)", dcf))
     else:
         # Financials: justified P/B = (ROE − g)/(r − g), applied to book value per share.
         ptb = safe_float(price_to_book)
@@ -1934,6 +1991,8 @@ def get_quant_score(ticker):
         revenue_growth, high_52, low_52,
         beta=beta, dividend_yield=dividend_yield, roe=roe, payout=payout_ratio,
         sector=sector, price_to_book=price_to_book,
+        market_cap=market_cap, total_debt=total_debt, total_cash=total_cash,
+        net_debt_to_ebitda=net_debt_to_ebitda,
     )
     fair_value = fv["central"] if fv["central"] else price
     fair_value_low = fv["low"]
