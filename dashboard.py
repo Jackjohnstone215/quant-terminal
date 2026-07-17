@@ -26,6 +26,12 @@ def apply_custom_style():
     st.markdown(
         """
         <style>
+        /* Inter for a modern product feel (must lead the sheet for @import to apply) */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        html, body, [class*="css"], .stMarkdown, input, textarea, select, button,
+        [data-testid="stMetricValue"], [data-baseweb="tab"] {
+            font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
         /* Tighten the top padding so content sits higher */
         .block-container { padding-top: 2rem; max-width: 1500px; }
         /* Metric cards: give st.metric a carded look */
@@ -52,6 +58,29 @@ def apply_custom_style():
         section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] {
             margin: 14px 0 2px 0; letter-spacing: 0.08em;
         }
+        /* Bordered containers (st.container(border=True)) -> same carded look as metrics,
+           so the qualitative feature cards read as one system */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border: 1px solid #232a36 !important;
+            border-radius: 12px;
+            background: #121722;
+        }
+        /* Metric cards: subtle hover + bolder value, so metric rows feel tactile and aligned */
+        div[data-testid="stMetric"] { transition: border-color .15s ease, background .15s ease; }
+        div[data-testid="stMetric"]:hover { border-color: #2f3a4d; }
+        div[data-testid="stMetricValue"] { font-weight: 700; letter-spacing: -0.01em; }
+        /* Tabs: room to breathe; the active underline is already the teal primaryColor */
+        div[data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid #1c2230; }
+        button[data-baseweb="tab"] { font-weight: 500; }
+        button[data-baseweb="tab"]:hover { color: #00C39A; }
+        /* Expander headers: a touch heavier so sections are scannable */
+        details summary p, div[data-testid="stExpander"] summary { font-weight: 600; }
+        /* Dividers: subtler, consistent rhythm */
+        hr { border-color: #1c2230 !important; margin: 1rem 0; }
+        /* Buttons: consistent radius across the app */
+        div.stButton > button, div.stDownloadButton > button { border-radius: 9px; }
+        /* Container-bordered padding so card contents don't crowd the edge */
+        div[data-testid="stVerticalBlockBorderWrapper"] > div { padding: 2px; }
         </style>
         """,
         unsafe_allow_html=True,
