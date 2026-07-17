@@ -6,3 +6,4 @@ openai==2.44.0
 python-dotenv==1.2.2
 lxml==6.1.1
 fpdf2==2.8.7
+supabase==2.31.0

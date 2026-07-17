@@ -2662,16 +2662,139 @@ def market_command_center():
 
 
 # ============================================================
+# SUPABASE AUTH + CLOUD STORAGE (optional; falls back to local files)
+# ============================================================
+
+def supabase_configured():
+    return bool(_get_secret("SUPABASE_URL") and _get_secret("SUPABASE_ANON_KEY"))
+
+
+def get_sb():
+    """The signed-in Supabase client (held in session), or None."""
+    return st.session_state.get("sb_client")
+
+
+def sb_user():
+    return st.session_state.get("sb_user")
+
+
+def signed_in():
+    return supabase_configured() and get_sb() is not None and sb_user() is not None
+
+
+def _new_sb_client():
+    from supabase import create_client
+    return create_client(_get_secret("SUPABASE_URL"), _get_secret("SUPABASE_ANON_KEY"))
+
+
+def sb_sign_in(email, password, sign_up=False):
+    """Sign in or sign up. Returns (ok, message). Supabase handles password security."""
+    try:
+        client = _new_sb_client()
+        if sign_up:
+            res = client.auth.sign_up({"email": email, "password": password})
+            if res.user is None:
+                return False, "Sign-up failed — check the email/password."
+            # If email confirmation is on, there may be no session yet.
+            if res.session is None:
+                return False, "Account created — check your email to confirm, then sign in."
+        else:
+            res = client.auth.sign_in_with_password({"email": email, "password": password})
+        if res.session is None or res.user is None:
+            return False, "Could not sign in — check your credentials."
+        st.session_state["sb_client"] = client
+        st.session_state["sb_user"] = {"id": res.user.id, "email": res.user.email}
+        st.session_state.pop("_user_state", None)   # clear any cached state
+        return True, "Signed in."
+    except Exception as e:
+        return False, f"Auth error: {str(e)[:160]}"
+
+
+def sb_sign_out():
+    try:
+        c = get_sb()
+        if c:
+            c.auth.sign_out()
+    except Exception:
+        pass
+    for k in ("sb_client", "sb_user", "_user_state"):
+        st.session_state.pop(k, None)
+
+
+def _sb_load_state():
+    """Read this user's stored blob (watchlist/journal/portfolio), cached per session."""
+    if "_user_state" in st.session_state:
+        return st.session_state["_user_state"]
+    default = {"watchlist": [], "journal": [], "portfolio": []}
+    try:
+        c, u = get_sb(), sb_user()
+        res = c.table("user_state").select("*").eq("user_id", u["id"]).execute()
+        if res.data:
+            row = res.data[0]
+            default = {"watchlist": row.get("watchlist") or [],
+                       "journal": row.get("journal") or [],
+                       "portfolio": row.get("portfolio") or []}
+    except Exception:
+        pass
+    st.session_state["_user_state"] = default
+    return default
+
+
+def _sb_save_field(field, value):
+    stt = _sb_load_state()
+    stt[field] = value
+    try:
+        c, u = get_sb(), sb_user()
+        c.table("user_state").upsert({"user_id": u["id"], field: value}).execute()
+    except Exception as e:
+        st.warning(f"Couldn't sync to your account: {str(e)[:120]}")
+
+
+def auth_sidebar():
+    """Login / signup box in the sidebar. No-op if Supabase isn't configured."""
+    if not supabase_configured():
+        st.sidebar.caption("💾 Sign-in not configured — data saves locally only.")
+        return
+    if signed_in():
+        st.sidebar.success(f"✅ Signed in: {sb_user()['email']}")
+        if st.sidebar.button("Sign out"):
+            sb_sign_out()
+            st.rerun()
+        return
+    with st.sidebar.expander("🔐 Sign in to save your data", expanded=True):
+        email = st.text_input("Email", key="auth_email")
+        pw = st.text_input("Password", type="password", key="auth_pw")
+        c1, c2 = st.columns(2)
+        if c1.button("Sign in", width="stretch"):
+            ok, msg = sb_sign_in(email, pw, sign_up=False)
+            (st.success if ok else st.error)(msg)
+            if ok:
+                st.rerun()
+        if c2.button("Sign up", width="stretch"):
+            ok, msg = sb_sign_in(email, pw, sign_up=True)
+            (st.success if ok else st.warning)(msg)
+            if ok:
+                st.rerun()
+        st.caption("Your watchlist, notes & portfolio save to your account and follow you across devices.")
+
+
+# ============================================================
 # PORTFOLIO MANAGER AI HELPERS
 # ============================================================
 
 def load_portfolio():
+    if signed_in():
+        recs = _sb_load_state().get("portfolio") or []
+        return pd.DataFrame(recs) if recs else pd.DataFrame(columns=["Ticker", "Shares", "Average Cost"])
     if PORTFOLIO_FILE.exists():
         return pd.read_csv(PORTFOLIO_FILE)
     return pd.DataFrame(columns=["Ticker", "Shares", "Average Cost"])
 
 
 def save_portfolio(df):
+    if signed_in():
+        _sb_save_field("portfolio", df.fillna("").to_dict("records"))
+        return
     df.to_csv(PORTFOLIO_FILE, index=False)
 
 
@@ -2680,7 +2803,10 @@ def save_portfolio(df):
 # ============================================================
 
 def load_watchlist():
-    # 1) Local file (persists on your PC and within a cloud session)
+    # Signed in → your account (persists everywhere)
+    if signed_in():
+        return [str(t).upper().strip() for t in (_sb_load_state().get("watchlist") or []) if str(t).strip()]
+    # Otherwise: local file, then URL query param (bookmark) fallback
     if WATCHLIST_FILE.exists():
         try:
             df = pd.read_csv(WATCHLIST_FILE)
@@ -2689,7 +2815,6 @@ def load_watchlist():
                 return fl
         except Exception:
             pass
-    # 2) URL query param — survives Streamlit Cloud reboots if you bookmark the page
     try:
         wl = st.query_params.get("wl")
         if wl:
@@ -2705,11 +2830,13 @@ def save_watchlist(tickers):
         t = str(t).upper().strip()
         if t and t not in clean:
             clean.append(t)
+    if signed_in():
+        _sb_save_field("watchlist", clean)
+        return clean
     try:
         pd.DataFrame({"Ticker": clean}).to_csv(WATCHLIST_FILE, index=False)
     except Exception:
         pass
-    # Mirror into the URL so a bookmark preserves the list across reboots/devices.
     try:
         st.query_params["wl"] = ",".join(clean)
     except Exception:
@@ -2721,6 +2848,13 @@ JOURNAL_COLS = ["Ticker", "My Rating", "My Target", "Thesis", "Notes", "Updated"
 
 
 def load_journal():
+    if signed_in():
+        recs = _sb_load_state().get("journal") or []
+        df = pd.DataFrame(recs)
+        for c in JOURNAL_COLS:
+            if c not in df.columns:
+                df[c] = ""
+        return df[JOURNAL_COLS].fillna("") if not df.empty else pd.DataFrame(columns=JOURNAL_COLS)
     if JOURNAL_FILE.exists():
         try:
             df = pd.read_csv(JOURNAL_FILE)
@@ -2731,6 +2865,16 @@ def load_journal():
         except Exception:
             pass
     return pd.DataFrame(columns=JOURNAL_COLS)
+
+
+def _persist_journal(df):
+    if signed_in():
+        _sb_save_field("journal", df[JOURNAL_COLS].fillna("").to_dict("records"))
+    else:
+        try:
+            df.to_csv(JOURNAL_FILE, index=False)
+        except Exception:
+            pass
 
 
 def save_journal_entry(ticker, rating, target, thesis, notes):
@@ -2744,19 +2888,13 @@ def save_journal_entry(ticker, rating, target, thesis, notes):
         "Thesis": thesis, "Notes": notes, "Updated": today_string(),
     }])
     df = pd.concat([new, df], ignore_index=True)
-    try:
-        df.to_csv(JOURNAL_FILE, index=False)
-    except Exception:
-        pass
+    _persist_journal(df)
 
 
 def delete_journal_entry(ticker):
     df = load_journal()
     df = df[df["Ticker"] != str(ticker).upper().strip()]
-    try:
-        df.to_csv(JOURNAL_FILE, index=False)
-    except Exception:
-        pass
+    _persist_journal(df)
 
 
 def compute_alerts(row):
@@ -4855,6 +4993,8 @@ def compare_page():
 def main():
     apply_custom_style()
     app_header()
+    auth_sidebar()
+    st.sidebar.divider()
     page = st.sidebar.radio(
         "Choose Page",
         ["🏠 Daily Briefing", "Market Command Center", "My Watchlist", "Compare Stocks", "Research Queue", "Portfolio Manager AI", "Position Sizer", "Quant Opportunity Engine", "Quant Stock Deep Dive", "ETF Explorer", "Valuation Lab", "Strategy Builder", "Research Journal", "Backtesting Lab", "Learning Center"]
