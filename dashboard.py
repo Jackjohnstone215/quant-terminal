@@ -4911,9 +4911,9 @@ def stock_deep_dive():
                 price_with_fair_value(hist, row.get("Fair Value Low"), row.get("Fair Value High"), row.get("Fair Value")),
                 width="stretch",
             )
-        tab_biz, tab_mgmt, tab1, tab2, tab3, tab8, tab4, tab_cat, tab5, tab6, tab7 = st.tabs([
-            "🏢 The Business", "🧭 Management", "Master Scores", "Valuation + Cash Flow", "Quality + Health",
-            "📊 Analyst View", "Momentum + News", "🗓️ Catalysts", "Bull vs Bear", "🤖 AI Analyst", "Metric Guide"
+        tab_biz, tab_mgmt, tab1, tab2, tab3, tab8, tab4, tab5, tab6 = st.tabs([
+            "🏢 The Business", "🧭 Management", "🎯 Master Scores", "💰 Valuation", "🩺 Quality & Health",
+            "📊 Analyst View", "📈 Momentum & Catalysts", "⚖️ Bull vs Bear", "🤖 AI Analyst"
         ])
         with tab_biz:
             st.subheader("Know the Business")
@@ -5518,17 +5518,8 @@ def stock_deep_dive():
                 {"Metric": "Max Drawdown %", "Value": row["Max Drawdown %"]},
             ])
             st.dataframe(momentum_df, width="stretch")
-            st.subheader("Recent Yahoo Finance News")
-            if not ticker_news:
-                st.info("No recent Yahoo Finance headlines found for this ticker.")
-            for article in ticker_news[:8]:
-                with st.container(border=True):
-                    st.markdown(f"### [{article['Title']}]({article['URL']})")
-                    st.write(f"**Signal:** {article['Signal']} | **Importance:** {article['Importance']}/10 | **Category:** {article['Category']}")
-                    st.write(f"**Source:** {article['Provider']} | **Published:** {article['Published'].strftime('%Y-%m-%d %I:%M %p UTC')}")
-                    if article["Summary"]:
-                        st.write(article["Summary"])
-        with tab_cat:
+
+            st.divider()
             st.subheader("Catalyst Timeline")
             st.caption("The recent news flow, sorted newest-first and tagged by catalyst type, with a rolling read of whether the narrative is tilting bullish or bearish. Sentiment reuses the same rule-based headline scoring as the rest of the app — a research aid, not financial advice.")
             cat_news = get_ticker_news(ticker, hours_back=24 * 45)
@@ -5628,8 +5619,8 @@ def stock_deep_dive():
                         st.markdown(memo)
                     else:
                         st.warning("Could not generate a summary. Check your API key and model name.")
-        with tab7:
-            st.subheader("How to read the important metrics")
+        st.divider()
+        with st.expander("📖 How to read the key metrics"):
             guide = [
                 ("Investment Score", "Long-term wealth-building quality. High means the business may be worth holding for years."),
                 ("Opportunity Score", "Undervaluation and upside potential. High means the stock may be mispriced."),
@@ -5641,8 +5632,7 @@ def stock_deep_dive():
                 ("EV/FCF", "Enterprise value divided by free cash flow. Lower can mean cheaper."),
             ]
             for name, explanation in guide:
-                with st.expander(name):
-                    st.write(explanation)
+                st.markdown(f"**{name}** — {explanation}")
 
 
 
