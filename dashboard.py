@@ -2273,6 +2273,148 @@ def capital_allocation_read(history, ownership=None, div_growth=None, roic_last=
     return {"verdict": verdict, "headline": headline, "points": points}
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def fetch_forensic_inputs(ticker):
+    """Two most-recent fiscal years of income/balance/cash-flow detail + market cap/sector —
+    everything the Piotroski F, Altman Z, and Beneish M scores need. FMP annual only. Returns
+    {'curr':{...}, 'prior':{...}, 'mktcap':float|None, 'sector':str|None} or None."""
+    inc = _fmp_get_list(f"income-statement?symbol={ticker}&period=annual&limit=2")
+    bs = _fmp_get_list(f"balance-sheet-statement?symbol={ticker}&period=annual&limit=2")
+    cf = _fmp_get_list(f"cash-flow-statement?symbol={ticker}&period=annual&limit=2")
+    if not (inc and bs and cf) or min(len(inc), len(bs), len(cf)) < 2:
+        return None
+    prof = _fmp_get(f"profile?symbol={ticker}") or {}
+    g = safe_float
+
+    def yr(i, b, c):
+        return {
+            "revenue": g(i.get("revenue")),
+            "gross_profit": g(i.get("grossProfit")),
+            "sga": g(i.get("sellingGeneralAndAdministrativeExpenses")),
+            "ebit": g(i.get("ebit")) if i.get("ebit") is not None else g(i.get("operatingIncome")),
+            "net_income": g(i.get("netIncome")),
+            "dep": g(c.get("depreciationAndAmortization")) or g(i.get("depreciationAndAmortization")),
+            "total_assets": g(b.get("totalAssets")),
+            "current_assets": g(b.get("totalCurrentAssets")),
+            "current_liabilities": g(b.get("totalCurrentLiabilities")),
+            "total_liabilities": g(b.get("totalLiabilities")),
+            "retained_earnings": g(b.get("retainedEarnings")),
+            "ppe": g(b.get("propertyPlantEquipmentNet")),
+            "receivables": g(b.get("netReceivables")) if b.get("netReceivables") is not None else g(b.get("accountsReceivables")),
+            "long_term_debt": g(b.get("longTermDebt")),
+            "cfo": g(c.get("netCashProvidedByOperatingActivities")),
+            "shares": g(i.get("weightedAverageShsOut")),
+        }
+
+    return {"curr": yr(inc[0], bs[0], cf[0]), "prior": yr(inc[1], bs[1], cf[1]),
+            "mktcap": g(prof.get("marketCap")), "sector": prof.get("sector")}
+
+
+def _sdiv(a, b):
+    """Safe divide → None if either side missing or denominator is zero."""
+    a, b = safe_float(a), safe_float(b)
+    return (a / b) if (a is not None and b not in (None, 0)) else None
+
+
+def piotroski_fscore(curr, prior):
+    """Piotroski F-Score (0–9): nine binary fundamental-strength tests across profitability,
+    leverage/liquidity, and operating efficiency (Piotroski 2000 — public academic model). A
+    test resolves to None when its inputs are missing and is excluded from both score and max.
+    Returns {'score':int,'max':int,'checks':[(label, True/False/None)]} or None if <5 evaluable."""
+    if not curr or not prior:
+        return None
+    roa_c, roa_p = _sdiv(curr["net_income"], curr["total_assets"]), _sdiv(prior["net_income"], prior["total_assets"])
+    cr_c, cr_p = _sdiv(curr["current_assets"], curr["current_liabilities"]), _sdiv(prior["current_assets"], prior["current_liabilities"])
+    gm_c, gm_p = _sdiv(curr["gross_profit"], curr["revenue"]), _sdiv(prior["gross_profit"], prior["revenue"])
+    at_c, at_p = _sdiv(curr["revenue"], curr["total_assets"]), _sdiv(prior["revenue"], prior["total_assets"])
+    ltd_c, ltd_p = _sdiv(curr["long_term_debt"], curr["total_assets"]), _sdiv(prior["long_term_debt"], prior["total_assets"])
+    cfo_c = safe_float(curr["cfo"])
+    cfo_ta = _sdiv(curr["cfo"], curr["total_assets"])
+    sh_c, sh_p = safe_float(curr["shares"]), safe_float(prior["shares"])
+
+    def cond(x):
+        return None if x is None else bool(x)
+
+    checks = [
+        ("Positive net income (ROA > 0)", cond(None if roa_c is None else roa_c > 0)),
+        ("Positive operating cash flow", cond(None if cfo_c is None else cfo_c > 0)),
+        ("Rising ROA", cond(None if (roa_c is None or roa_p is None) else roa_c > roa_p)),
+        ("Cash flow exceeds profit (accruals)", cond(None if (cfo_ta is None or roa_c is None) else cfo_ta > roa_c)),
+        ("Lower long-term debt ratio", cond(None if (ltd_c is None or ltd_p is None) else ltd_c < ltd_p)),
+        ("Higher current ratio", cond(None if (cr_c is None or cr_p is None) else cr_c > cr_p)),
+        ("No share dilution", cond(None if (not sh_c or not sh_p) else sh_c <= sh_p)),
+        ("Higher gross margin", cond(None if (gm_c is None or gm_p is None) else gm_c > gm_p)),
+        ("Higher asset turnover", cond(None if (at_c is None or at_p is None) else at_c > at_p)),
+    ]
+    evaluable = [c for c in checks if c[1] is not None]
+    if len(evaluable) < 5:
+        return None
+    return {"score": sum(1 for _, p in checks if p), "max": len(evaluable), "checks": checks}
+
+
+def altman_zscore(curr, mktcap):
+    """Altman Z-Score (classic 1968 model, calibrated for public manufacturers). Z > 2.99 =
+    safe, 1.81–2.99 = grey zone, < 1.81 = distress. Public academic model. Returns
+    {'z','zone','components'} or None. Not meaningful for banks/insurers — caller skips them."""
+    if not curr:
+        return None
+    ta, tl = safe_float(curr["total_assets"]), safe_float(curr["total_liabilities"])
+    ca, cl = safe_float(curr["current_assets"]), safe_float(curr["current_liabilities"])
+    re, ebit = safe_float(curr["retained_earnings"]), safe_float(curr["ebit"])
+    rev, mc = safe_float(curr["revenue"]), safe_float(mktcap)
+    if not ta or not tl or None in (ca, cl, re, ebit, rev, mc):
+        return None
+    x1, x2, x3, x4, x5 = (ca - cl) / ta, re / ta, ebit / ta, mc / tl, rev / ta
+    z = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 1.0 * x5
+    zone = "Safe" if z > 2.99 else ("Grey zone" if z >= 1.81 else "Distress")
+    return {"z": z, "zone": zone,
+            "components": {"X1 WC/TA": x1, "X2 RE/TA": x2, "X3 EBIT/TA": x3, "X4 MktCap/TL": x4, "X5 Sales/TA": x5}}
+
+
+def beneish_mscore(curr, prior):
+    """Beneish M-Score — statistical likelihood of earnings manipulation (8-variable model,
+    Beneish 1999 — public academic model). M > -1.78 flags possible manipulation; < -2.22 =
+    low risk; between = grey. Needs both years' detail; returns {'m','flag'} or None if any
+    of the eight variables can't be computed."""
+    if not curr or not prior:
+        return None
+    rev_c, rev_p = safe_float(curr["revenue"]), safe_float(prior["revenue"])
+    if not rev_c or not rev_p:
+        return None
+    g = safe_float
+    dsri = _sdiv(_sdiv(curr["receivables"], rev_c), _sdiv(prior["receivables"], rev_p))
+    gmi = _sdiv(_sdiv(prior["gross_profit"], rev_p), _sdiv(curr["gross_profit"], rev_c))
+
+    def aqi_comp(y):
+        ta = g(y["total_assets"]); ca = g(y["current_assets"]); ppe = g(y["ppe"])
+        return (1 - (ca + ppe) / ta) if (ta and ca is not None and ppe is not None) else None
+
+    def depi_comp(y):
+        dep = g(y["dep"]); ppe = g(y["ppe"])
+        return (dep / (dep + ppe)) if (dep is not None and ppe is not None and (dep + ppe)) else None
+
+    def lvgi_comp(y):
+        ta = g(y["total_assets"]); cl = g(y["current_liabilities"])
+        ltd = g(y["long_term_debt"]) or 0
+        return ((ltd + cl) / ta) if (ta and cl is not None) else None
+
+    aqi = _sdiv(aqi_comp(curr), aqi_comp(prior))
+    sgi = _sdiv(rev_c, rev_p)
+    depi = _sdiv(depi_comp(prior), depi_comp(curr))
+    sgai = _sdiv(_sdiv(curr["sga"], rev_c), _sdiv(prior["sga"], rev_p))
+    lvgi = _sdiv(lvgi_comp(curr), lvgi_comp(prior))
+    ni, cfo, ta = g(curr["net_income"]), g(curr["cfo"]), g(curr["total_assets"])
+    tata = ((ni - cfo) / ta) if (ni is not None and cfo is not None and ta) else None
+
+    parts = [dsri, gmi, aqi, sgi, depi, sgai, lvgi, tata]
+    if any(p is None for p in parts):
+        return None
+    m = (-4.84 + 0.920 * dsri + 0.528 * gmi + 0.404 * aqi + 0.892 * sgi
+         + 0.115 * depi - 0.172 * sgai + 4.679 * tata - 0.327 * lvgi)
+    flag = "Possible manipulation" if m > -1.78 else ("Grey zone" if m > -2.22 else "Low risk")
+    return {"m": m, "flag": flag}
+
+
 def fetch_fmp_fundamentals(ticker):
     """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
     DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
@@ -4975,6 +5117,59 @@ def stock_deep_dive():
                 if bits:
                     st.caption(" · ".join(bits) + ".")
                 st.caption("Standard payout/cash-flow/balance-sheet methodology — the higher the score, the more comfortably the company can keep (and grow) the dividend.")
+
+            st.divider()
+            st.markdown("### 🔬 Forensic Quality Scores")
+            st.caption("Three well-known academic models that turn the financial statements into plain-English reads on fundamental strength, bankruptcy risk, and earnings-manipulation flags (Piotroski 2000, Altman 1968, Beneish 1999). Screening aids, not verdicts — and not financial advice.")
+            fi = fetch_forensic_inputs(ticker)
+            if not fi:
+                st.info("Not enough multi-year statement detail available to compute forensic scores for this ticker.")
+            else:
+                is_fin = bool(fi.get("sector")) and any(k in str(fi["sector"]).lower() for k in ["financ", "bank", "insur"])
+                piot = piotroski_fscore(fi["curr"], fi["prior"])
+                alt = None if is_fin else altman_zscore(fi["curr"], fi["mktcap"])
+                ben = beneish_mscore(fi["curr"], fi["prior"])
+
+                f1, f2, f3 = st.columns(3)
+                if piot:
+                    rate = piot["score"] / piot["max"]
+                    f1.metric("Piotroski F-Score", f"{piot['score']}/{piot['max']}",
+                              "Strong" if rate >= 0.75 else ("Weak" if rate <= 0.35 else "Middling"))
+                else:
+                    f1.metric("Piotroski F-Score", "—")
+                if is_fin:
+                    f2.metric("Altman Z-Score", "n/a")
+                elif alt:
+                    f2.metric("Altman Z-Score", f"{alt['z']:.2f}", alt["zone"])
+                else:
+                    f2.metric("Altman Z-Score", "—")
+                if ben:
+                    f3.metric("Beneish M-Score", f"{ben['m']:.2f}", ben["flag"])
+                else:
+                    f3.metric("Beneish M-Score", "—")
+
+                if piot:
+                    rate = piot["score"] / piot["max"]
+                    tail = ("A high score — most profitability, leverage, and efficiency tests pass." if rate >= 0.75
+                            else "A low score — several fundamental tests are failing; proceed carefully." if rate <= 0.35
+                            else "A middling score — a mix of strengths and weak spots.")
+                    st.markdown(f"**Piotroski F-Score {piot['score']}/{piot['max']}** — fundamental strength on a 9-point scale. {tail}")
+                    failed = [l for l, p in piot["checks"] if p is False]
+                    if failed:
+                        st.caption("Failing tests: " + ", ".join(failed) + ".")
+                if is_fin:
+                    st.markdown("**Altman Z-Score — skipped.** The classic Z-Score is built on manufacturers' balance sheets and isn't meaningful for banks, insurers, or other financials.")
+                elif alt:
+                    zt = {"Safe": "Bankruptcy risk looks low on this classic distress model.",
+                          "Grey zone": "A grey-zone reading — not distressed, not clearly safe; worth a closer look at leverage and profitability.",
+                          "Distress": "The model puts this in its distress range — elevated financial-distress risk. Dig into the balance sheet first."}[alt["zone"]]
+                    st.markdown(f"**Altman Z-Score {alt['z']:.2f} — {alt['zone']}.** {zt} (Calibrated for manufacturers; treat as a rough gauge elsewhere.)")
+                if ben:
+                    bt = ("Above the -1.78 threshold — the model flags a higher statistical likelihood of earnings manipulation. NOT proof, but a prompt to scrutinize revenue recognition, receivables, and accruals." if ben["flag"] == "Possible manipulation"
+                          else "Below the -2.22 threshold — accrual and margin patterns don't resemble those of known manipulators." if ben["flag"] == "Low risk"
+                          else "A grey-zone reading — some flags, but not decisively in manipulator territory.")
+                    st.markdown(f"**Beneish M-Score {ben['m']:.2f} — {ben['flag']}.** {bt}")
+                st.caption("These are screens, not conclusions. Altman is calibrated for manufacturers (skipped for financials); all three can misfire on unusual capital structures. Research aids, not financial advice.")
         with tab8:
             st.subheader("Analyst & Forward View")
             st.caption("Forward-looking Wall Street consensus (Yahoo Finance). Complements the engine's trailing-data valuation with what analysts expect ahead.")
