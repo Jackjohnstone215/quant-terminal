@@ -941,11 +941,32 @@ def dcf_3stage(fcf_ps, g_high, r, g_term=0.025, high_years=5, fade_years=5):
     return pv
 
 
-def _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta=None):
-    """Engine DCF: CAPM discount rate (from beta) + a 3-stage growth profile with stage-1
-    growth from the company's own growth rate (capped). Returns None if no positive FCF."""
-    g1 = min(max(safe_float(growth_rate, 0.05) or 0.05, 0.0), 0.16)
-    return dcf_3stage(fcf_ps, g1, capm_rate(beta))
+def sustainable_growth(roe, payout):
+    """Fundamental (self-funded) growth = retention × ROE = (1 − payout) × ROE. Damodaran's
+    core discipline: a firm can't grow faster than its reinvestment and returns allow.
+    roe/payout are fractions. Returns None if ROE unavailable."""
+    roe = safe_float(roe)
+    if roe is None:
+        return None
+    payout = safe_float(payout, 0.0)
+    payout = min(max(payout if payout is not None else 0.0, 0.0), 1.0)
+    return roe * (1 - payout)
+
+
+def _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta=None, roe=None, payout=None):
+    """Engine DCF: CAPM discount rate + 3-stage growth, with stage-1 growth ANCHORED to
+    sustainable growth (retention × ROE) so we never assume more growth than the business
+    can fund. Terminal growth capped at the risk-free rate. None if no positive FCF."""
+    observed = max(safe_float(growth_rate, 0.05) or 0.05, 0.0)
+    sg = sustainable_growth(roe, payout)
+    if sg is not None:
+        # take the more conservative of observed vs fundable (allow a small near-term buffer)
+        g1 = min(observed, max(sg, 0.0) + 0.03)
+    else:
+        g1 = observed
+    g1 = min(max(g1, 0.0), 0.16)
+    g_term = min(0.025, RISK_FREE_RATE)   # can't outgrow the economy forever
+    return dcf_3stage(fcf_ps, g1, capm_rate(beta), g_term=g_term)
 
 
 def reverse_dcf_growth(price, fcf_ps, beta):
@@ -972,7 +993,7 @@ def reverse_dcf_growth(price, fcf_ps, beta):
 
 def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth_score,
                         cash_flow_score, risk_score, growth_rate, high_52, low_52,
-                        beta=None, dividend_yield=None):
+                        beta=None, dividend_yield=None, roe=None, payout=None):
     """Blend several valuation methods into an honest fair-value range.
 
     Methods: justified P/E, EV/FCF, a CAPM-discounted 3-stage DCF, PEG, 52-week midpoint,
@@ -1004,7 +1025,7 @@ def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth
             fair_ev_fcf = 14
         methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
 
-    dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta)
+    dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta, roe, payout)
     if dcf:
         methods.append(("DCF (3-stage, CAPM)", dcf))
 
@@ -1884,7 +1905,7 @@ def get_quant_score(ticker):
         price, pe, fcf_per_share, ev_to_fcf, peg,
         quality_score, growth_score, cash_flow_score, risk_score,
         revenue_growth, high_52, low_52,
-        beta=beta, dividend_yield=dividend_yield,
+        beta=beta, dividend_yield=dividend_yield, roe=roe, payout=payout_ratio,
     )
     fair_value = fv["central"] if fv["central"] else price
     fair_value_low = fv["low"]
@@ -3972,6 +3993,20 @@ def stock_deep_dive():
                         st.success(f"🟢 That's **below** its recent revenue growth (~{hist_g:.0f}%). The market is pricing in a slowdown — potential value if growth holds.")
                     else:
                         st.info(f"That's roughly in line with its recent revenue growth (~{hist_g:.0f}%) — the price looks reasonable on growth expectations.")
+
+                # Sustainable-growth reality check (Damodaran): can the business FUND this growth?
+                roe_f = safe_float(row.get("ROE %"))
+                payout_f = safe_float(row.get("Payout Ratio %"))
+                if roe_f is not None:
+                    sg = sustainable_growth(roe_f / 100, (payout_f / 100) if payout_f is not None else 0.0)
+                    if sg is not None:
+                        st.caption(
+                            f"**Fundable (sustainable) growth ≈ {sg*100:.0f}%/yr** — that's what the business can self-fund "
+                            f"(ROE {roe_f:.0f}% × retention). "
+                            + ("🔴 The price implies *more* growth than the company can fund from its own returns — it must either raise capital or exceed its historical efficiency."
+                               if implied * 100 > sg * 100 + 3
+                               else "🟢 The implied growth is within what the business can fund internally — a realistic, self-financing path.")
+                        )
         with tab3:
             st.subheader("Quality + Health")
             health_df = pd.DataFrame([
