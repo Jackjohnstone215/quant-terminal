@@ -1051,6 +1051,28 @@ def fcff_wacc_value(fcf_ps, price, market_cap, total_debt, total_cash, beta,
     return equity_value / shares if shares else None
 
 
+def monte_carlo_dcf(fcf_ps, base_growth, beta, n=3000, seed=0):
+    """Run N DCF simulations with randomized assumptions (growth, discount rate, terminal
+    rate, starting FCF) to get a DISTRIBUTION of fair value instead of a point estimate.
+    Returns the array of simulated per-share values (deterministic per seed)."""
+    import numpy as np
+    fcf_ps = safe_float(fcf_ps)
+    if not fcf_ps or fcf_ps <= 0:
+        return None
+    rng = np.random.default_rng(seed)
+    base_r = capm_rate(beta)
+    g = np.clip(rng.normal(base_growth, 0.045, n), -0.05, 0.30)      # growth uncertainty
+    r = np.clip(rng.normal(base_r, 0.015, n), 0.06, 0.16)           # discount-rate uncertainty
+    gt = np.clip(rng.normal(0.023, 0.005, n), 0.005, RISK_FREE_RATE)  # terminal-growth uncertainty
+    fmult = np.clip(rng.normal(1.0, 0.10, n), 0.7, 1.35)            # starting-FCF uncertainty
+    vals = []
+    for i in range(n):
+        v = dcf_3stage(fcf_ps * fmult[i], float(g[i]), float(r[i]), g_term=float(gt[i]))
+        if v is not None and v > 0:
+            vals.append(v)
+    return np.array(vals) if len(vals) > 100 else None
+
+
 def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth_score,
                         cash_flow_score, risk_score, growth_rate, high_52, low_52,
                         beta=None, dividend_yield=None, roe=None, payout=None,
@@ -4149,6 +4171,39 @@ def stock_deep_dive():
                     sc[i].metric(f"{label} ({g*100:.0f}% gr)", money(v) if v else "N/A",
                                  f"{up:+.0f}%" if up is not None else None)
                 st.caption(f"Discounted at a {rr_s*100:.1f}% CAPM rate. The spread between bear and bull is your uncertainty — a wide gap means the valuation hinges heavily on growth assumptions.")
+
+                # ---- Monte Carlo: full distribution of fair value ----
+                st.divider()
+                st.markdown("### Monte Carlo valuation (3,000 simulations)")
+                st.caption("Runs thousands of DCFs with randomized growth, discount rate, terminal rate & starting FCF — turning fair value into a *probability distribution* and estimating the odds the stock is undervalued.")
+                seed = sum(ord(c) for c in ticker) if ticker else 0
+                mc = monte_carlo_dcf(fcf_ps_s, base_g, row.get("Beta"), seed=seed)
+                if mc is None:
+                    st.caption("Not enough valid simulations (needs positive free cash flow).")
+                else:
+                    import numpy as np
+                    p10, p50, p90 = np.percentile(mc, [10, 50, 90])
+                    prob_under = float((mc > price_now).mean() * 100) if price_now else 0
+                    q1, q2, q3 = st.columns(3)
+                    q1.metric("Median fair value", money(p50))
+                    q2.metric("80% range", f"{money(p10)} – {money(p90)}")
+                    q3.metric("Odds undervalued", f"{prob_under:.0f}%",
+                              help="Share of simulations where fair value exceeds today's price.")
+                    if prob_under >= 70:
+                        st.success(f"🟢 In **{prob_under:.0f}%** of simulations the stock is worth more than today's price — the odds favor undervaluation.")
+                    elif prob_under <= 30:
+                        st.warning(f"🔴 Only **{prob_under:.0f}%** of simulations put fair value above the price — the odds lean overvalued.")
+                    else:
+                        st.info(f"About **{prob_under:.0f}%** of simulations show it undervalued — genuinely a coin-flip; the price is roughly fair given the uncertainty.")
+                    clipped = mc[(mc >= np.percentile(mc, 1)) & (mc <= np.percentile(mc, 99))]
+                    fig_mc = go.Figure(go.Histogram(x=clipped, nbinsx=40, marker_color="#2b6f63"))
+                    if price_now:
+                        fig_mc.add_vline(x=price_now, line_dash="dash", line_color=ACCENT,
+                                         annotation_text="price", annotation_font_color=ACCENT)
+                    fig_mc.update_xaxes(title="Simulated fair value / share ($)", gridcolor=CHART_GRID)
+                    fig_mc.update_yaxes(title="Simulations", gridcolor=CHART_GRID)
+                    st.plotly_chart(_style_fig(fig_mc, height=320), width="stretch")
+                    st.caption("The width of the distribution is the honest uncertainty. A tall, narrow peak far above the price = a confident buy signal; a wide smear straddling the price = genuinely uncertain.")
             else:
                 st.caption("Scenario DCF needs positive free cash flow — not applicable here.")
         with tab3:
