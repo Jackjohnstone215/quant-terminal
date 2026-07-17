@@ -2117,6 +2117,162 @@ def moat_history_chart(history):
     return _style_fig(fig, height=340)
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def fetch_capital_history(ticker, years=5):
+    """Multi-year capital-allocation history for the management report card, oldest→newest:
+    share count, buybacks, dividends, capex, R&D, FCF, operating cash flow, total/net debt,
+    cash. FMP annual statements only (this level of detail isn't reliable from Yahoo). Public
+    data. Returns [] if unavailable. years stays ≤5 — the FMP free tier rejects annual limit>5."""
+    inc = _fmp_get_list(f"income-statement?symbol={ticker}&period=annual&limit={years}")
+    cf = _fmp_get_list(f"cash-flow-statement?symbol={ticker}&period=annual&limit={years}")
+    bs = _fmp_get_list(f"balance-sheet-statement?symbol={ticker}&period=annual&limit={years}")
+    if not inc or not cf:
+        return []
+
+    def by_year(rows):
+        return {str(r.get("fiscalYear") or str(r.get("date", ""))[:4]): r for r in (rows or [])}
+
+    I, C, B = by_year(inc), by_year(cf), by_year(bs)
+    out = []
+    for yr in sorted(set(I) & set(C)):
+        i, c, b = I[yr], C[yr], B.get(yr, {})
+
+        def av(v):
+            v = safe_float(v)
+            return abs(v) if v is not None else None
+
+        out.append({
+            "year": yr,
+            "shares": safe_float(i.get("weightedAverageShsOut")),
+            "net_income": safe_float(i.get("netIncome")),
+            "rnd": av(i.get("researchAndDevelopmentExpenses")),
+            "capex": av(c.get("capitalExpenditure")),
+            "buybacks": av(c.get("commonStockRepurchased")),
+            "dividends": av(c.get("commonDividendsPaid") or c.get("netDividendsPaid")),
+            "fcf": safe_float(c.get("freeCashFlow")),
+            "ocf": safe_float(c.get("netCashProvidedByOperatingActivities")),
+            "total_debt": safe_float(b.get("totalDebt")),
+            "net_debt": safe_float(b.get("netDebt")),
+            "cash": safe_float(b.get("cashAndCashEquivalents")),
+        })
+    return out
+
+
+def capital_allocation_read(history, ownership=None, div_growth=None, roic_last=None):
+    """Judge how well management stewards shareholder capital, from multi-year data. Looks at
+    dilution vs buybacks, cash returned vs generated, balance-sheet discipline, whether
+    reinvestment earns its keep (tied to ROIC), and insider alignment. Public/textbook framing,
+    NOT any proprietary model. Returns {'verdict','headline','points':[(dim,tone,text)]} or None."""
+    if not history or len(history) < 3:
+        return None
+    n = len(history)
+    span = f"{history[0]['year']}–{history[-1]['year']}"
+    first, last = history[0], history[-1]
+    points = []
+
+    # 1) Share count — dilution vs buyback
+    sh0, sh1 = first.get("shares"), last.get("shares")
+    share_chg = ((sh1 - sh0) / sh0 * 100) if (sh0 and sh1) else None
+    ann = (share_chg / (n - 1)) if (share_chg is not None and n > 1) else share_chg
+    if share_chg is not None:
+        if share_chg <= -3:
+            points.append(("Share count", "🟢", f"Shares outstanding are down ~{abs(share_chg):.0f}% across {span} — management is shrinking the share base, lifting per-share value for continuing holders."))
+        elif share_chg < 2:
+            points.append(("Share count", "🟢", f"Share count is roughly flat across {span} ({share_chg:+.0f}%) — little dilution; stock comp is being offset or isn't material."))
+        elif ann < 3:
+            points.append(("Share count", "🟡", f"Shares outstanding are up ~{share_chg:.0f}% across {span} — modest dilution; watch that buybacks aren't just mopping up stock-based comp."))
+        else:
+            points.append(("Share count", "🔴", f"Shares outstanding are up ~{share_chg:.0f}% across {span} (~{ann:.0f}%/yr) — meaningful dilution; your ownership shrinks each year unless it reverses."))
+
+    # 2) Capital returned vs free cash flow generated
+    tot_fcf = sum(h["fcf"] for h in history if h.get("fcf"))
+    tot_div = sum(h["dividends"] for h in history if h.get("dividends"))
+    tot_bb = sum(h["buybacks"] for h in history if h.get("buybacks"))
+    returned = tot_div + tot_bb
+    payout = (returned / tot_fcf * 100) if (tot_fcf and tot_fcf > 0) else None
+    if payout is not None:
+        mix = " + ".join([m for m, v in [("dividends", tot_div), ("buybacks", tot_bb)] if v]) or "little"
+        if payout > 120:
+            points.append(("Capital return", "🟡", f"Over {span} it returned ~{payout:.0f}% of free cash flow ({mix}) — paying out more than it generates, funded from cash or debt. Fine briefly, not forever."))
+        elif payout >= 40:
+            points.append(("Capital return", "🟢", f"Over {span} ~{payout:.0f}% of free cash flow went back to shareholders via {mix} — a healthy, shareholder-friendly return of capital."))
+        elif returned > 0:
+            points.append(("Capital return", "🟢", f"~{payout:.0f}% of free cash flow returned via {mix} across {span}; the rest retained to reinvest or build cash."))
+        else:
+            points.append(("Capital return", "🟡", f"Little or no cash returned to shareholders across {span} — all FCF retained. Great if reinvested at high returns, wasteful if it just piles up."))
+    if div_growth and div_growth.get("streak"):
+        if div_growth.get("cut"):
+            points.append(("Dividend record", "🟡", "Pays a dividend but has a cut in its recent history — the payout record isn't spotless."))
+        else:
+            points.append(("Dividend record", "🟢", f"Dividend raised ~{div_growth['streak']} year(s) running — a track record of steady, growing payouts."))
+
+    # 3) Balance-sheet stewardship — net debt trajectory
+    nd0, nd1 = first.get("net_debt"), last.get("net_debt")
+    leveraging = (nd0 is not None and nd1 is not None and nd0 > 0 and nd1 > nd0 * 1.5)
+    if nd0 is not None and nd1 is not None:
+        if nd1 < 0:
+            points.append(("Balance sheet", "🟢", f"Net cash as of {last['year']} (more cash than debt) — a fortress balance sheet that gives management options and downside protection."))
+        elif nd1 <= nd0:
+            points.append(("Balance sheet", "🟢", f"Net debt held flat or fell across {span} — management isn't leaning harder on the balance sheet to fund itself."))
+        else:
+            grew = ((nd1 - nd0) / abs(nd0) * 100) if nd0 else None
+            points.append(("Balance sheet", "🟡", f"Net debt rose across {span}{f' (~+{grew:.0f}%)' if grew else ''} — leverage is building; make sure returns justify it and coverage stays comfortable."))
+
+    # 4) Reinvestment quality — capex + R&D vs the returns it earns (ROIC)
+    reinv = [((h.get("capex") or 0) + (h.get("rnd") or 0)) / h["ocf"]
+             for h in history if h.get("ocf") and h["ocf"] > 0]
+    rr = (sum(reinv) / len(reinv) * 100) if reinv else None
+    low_roic_heavy = (roic_last is not None and roic_last < 8 and rr is not None and rr > 40)
+    if rr is not None:
+        if roic_last is not None and roic_last >= 15:
+            points.append(("Reinvestment quality", "🟢", f"Reinvests ~{rr:.0f}% of operating cash flow (capex + R&D) at a high ROIC (~{roic_last:.0f}%) — capital plowed back is compounding at attractive returns. Exactly what you want."))
+        elif low_roic_heavy:
+            points.append(("Reinvestment quality", "🔴", f"Reinvests heavily (~{rr:.0f}% of operating cash flow) but ROIC is low (~{roic_last:.0f}%) — money is going in below its cost of capital. Growth here may be destroying value."))
+        else:
+            points.append(("Reinvestment quality", "🟡", f"Reinvests ~{rr:.0f}% of operating cash flow" + (f" at a ~{roic_last:.0f}% ROIC" if roic_last is not None else "") + " — reasonable, neither obviously accretive nor wasteful."))
+
+    # 5) Alignment — insider ownership & recent buying
+    if ownership:
+        ip = ownership.get("insider_pct")
+        if ip is not None and ip >= 0.03:
+            points.append(("Alignment", "🟢", f"Insiders own ~{ip * 100:.1f}% of the company — meaningful skin in the game aligns management with shareholders."))
+        buys, sells = ownership.get("insider_buys", 0), ownership.get("insider_sells", 0)
+        if buys > sells and buys > 0:
+            points.append(("Alignment", "🟢", f"Net insider buying recently ({buys} buys vs {sells} sells) — insiders adding to positions is a mild vote of confidence."))
+
+    # ---- Verdict ----
+    shrinking = share_chg is not None and share_chg <= -3
+    dilutive = ann is not None and ann >= 3
+    high_roic = roic_last is not None and roic_last >= 15
+    reds = sum(1 for _, t, _ in points if t == "🔴")
+    greens = sum(1 for _, t, _ in points if t == "🟢")
+    returns_capital = payout is not None and payout >= 40
+
+    if dilutive:
+        verdict = "Dilutive"
+        headline = f"The clearest signal across {span} is share-count growth — shareholders are being diluted. Even a good business erodes per-share value if the count keeps climbing."
+    elif low_roic_heavy:
+        verdict = "Empire-building risk"
+        headline = f"Management is reinvesting aggressively at returns below the cost of capital across {span} — growth that may be destroying value rather than creating it. Watch what the capital is buying."
+    elif leveraging and not returns_capital:
+        verdict = "Leveraging up"
+        headline = f"Net debt has climbed markedly across {span} without much going back to shareholders — the balance sheet is doing the heavy lifting. Fine if it funds high-return growth, risky otherwise."
+    elif shrinking and high_roic and reds == 0:
+        verdict = "Shareholder-friendly compounder"
+        headline = f"Across {span}: a shrinking share count, capital returned, and reinvestment at high returns — textbook shareholder-friendly stewardship. This is what great capital allocation looks like."
+    elif returns_capital and reds == 0 and greens >= 3:
+        verdict = "Disciplined allocator"
+        headline = f"Across {span}, management returns capital, keeps the balance sheet in check, and doesn't dilute — a disciplined, dependable allocator even if it isn't a high-flying compounder."
+    elif high_roic and reds == 0:
+        verdict = "Reinvesting for growth"
+        headline = f"Most free cash flow is retained and reinvested at attractive returns across {span} — management is prioritizing growth over payouts, which is the right call while ROIC stays high."
+    else:
+        verdict = "Mixed record"
+        headline = f"Capital-allocation signals are mixed across {span} — no single strength or flaw dominates. Weigh the dimensions below for what matters to your thesis."
+
+    return {"verdict": verdict, "headline": headline, "points": points}
+
+
 def fetch_fmp_fundamentals(ticker):
     """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
     DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
@@ -4401,8 +4557,8 @@ def stock_deep_dive():
                 price_with_fair_value(hist, row.get("Fair Value Low"), row.get("Fair Value High"), row.get("Fair Value")),
                 width="stretch",
             )
-        tab_biz, tab1, tab2, tab3, tab8, tab4, tab_cat, tab5, tab6, tab7 = st.tabs([
-            "🏢 The Business", "Master Scores", "Valuation + Cash Flow", "Quality + Health",
+        tab_biz, tab_mgmt, tab1, tab2, tab3, tab8, tab4, tab_cat, tab5, tab6, tab7 = st.tabs([
+            "🏢 The Business", "🧭 Management", "Master Scores", "Valuation + Cash Flow", "Quality + Health",
             "📊 Analyst View", "Momentum + News", "🗓️ Catalysts", "Bull vs Bear", "🤖 AI Analyst", "Metric Guide"
         ])
         with tab_biz:
@@ -4466,6 +4622,46 @@ def stock_deep_dive():
                 if all(h.get("roic") is None for h in history):
                     st.caption("Note: ROIC history wasn't available from the fallback source, so the durability read here is based on margins only.")
                 st.caption("Multi-year read from public financials (FMP / Yahoo) using a textbook quality lens (Buffett / Damodaran). Research aid, not financial advice.")
+        with tab_mgmt:
+            st.subheader("Management & Capital Allocation")
+            st.caption("How well management stewards shareholder money — dilution vs buybacks, cash returned vs generated, balance-sheet discipline, whether reinvestment earns its keep, and insider alignment. Built from multi-year public financials; a research aid, not financial advice.")
+            cap_hist = fetch_capital_history(ticker)
+            mh_for_roic = fetch_margin_history(ticker)
+            roic_last = None
+            if mh_for_roic:
+                roics = [h.get("roic") for h in mh_for_roic if h.get("roic") is not None]
+                roic_last = roics[-1] if roics else None
+            own = get_ownership_activity(ticker)
+            dg = get_dividend_growth(ticker)
+            card = capital_allocation_read(cap_hist, ownership=own, div_growth=dg, roic_last=roic_last)
+            if not card:
+                st.info("Not enough multi-year financial detail available to grade capital allocation for this ticker.")
+            else:
+                first_y, last_y = cap_hist[0], cap_hist[-1]
+                sh0, sh1 = first_y.get("shares"), last_y.get("shares")
+                share_chg = ((sh1 - sh0) / sh0 * 100) if (sh0 and sh1) else None
+                tot_fcf = sum(h["fcf"] for h in cap_hist if h.get("fcf"))
+                ret = sum((h.get("dividends") or 0) + (h.get("buybacks") or 0) for h in cap_hist)
+                payout = (ret / tot_fcf * 100) if (tot_fcf and tot_fcf > 0) else None
+                nd1 = last_y.get("net_debt")
+
+                def _bil(v):
+                    return "Net cash" if v is not None and v < 0 else (f"${v / 1e9:.1f}B" if v is not None else "—")
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric(f"Shares ({first_y['year']}–{last_y['year']})",
+                          f"{share_chg:+.0f}%" if share_chg is not None else "—")
+                m2.metric("Capital returned", f"{payout:.0f}% of FCF" if payout is not None else "—")
+                m3.metric("Net debt now", _bil(nd1))
+                m4.metric("Insider ownership",
+                          f"{own['insider_pct'] * 100:.1f}%" if own.get("insider_pct") is not None else "—")
+                st.markdown(f"### {card['verdict']}")
+                st.write(card["headline"])
+                for dim, tone, text in card["points"]:
+                    with st.container(border=True):
+                        st.markdown(f"{tone} **{dim}**")
+                        st.write(text)
+                st.caption("Multi-year read from public financials (FMP) + Yahoo ownership. Research aid, not financial advice.")
         with tab1:
             st.subheader("Master Quant Scores")
             score_df = pd.DataFrame([
