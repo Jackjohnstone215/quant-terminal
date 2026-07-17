@@ -1684,6 +1684,193 @@ def dividend_safety(row, growth):
                            "Balance sheet": round(debt_pts), "Growth history": round(growth_pts)}}
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def fetch_company_profile(ticker):
+    """Narrative company profile for the 'Know the Business' view: what the company does,
+    who runs it, how big it is, and where it's based. FMP first (its profile carries the
+    fullest business description), Yahoo `longBusinessSummary` as fallback. Every field is
+    a public-source fact — no proprietary data. Returns a dict of Nones if nothing is found."""
+    out = {"name": None, "description": None, "ceo": None, "employees": None,
+           "ipo_date": None, "website": None, "hq": None, "exchange": None,
+           "sector": None, "industry": None, "source": None}
+
+    # ---- FMP profile (preferred: full business description + officer + HQ) ----
+    prof = _fmp_get(f"profile?symbol={ticker}")
+    if prof and prof.get("description"):
+        hq = ", ".join(p for p in [prof.get("city"), prof.get("state"),
+                                   prof.get("country")] if p)
+        emp = prof.get("fullTimeEmployees")
+        try:
+            emp = int(emp) if emp not in (None, "", "0", 0) else None
+        except (ValueError, TypeError):
+            emp = None
+        out.update({
+            "name": prof.get("companyName") or ticker,
+            "description": prof.get("description"),
+            "ceo": prof.get("ceo") or None,
+            "employees": emp,
+            "ipo_date": prof.get("ipoDate") or None,
+            "website": prof.get("website") or None,
+            "hq": hq or None,
+            "exchange": prof.get("exchangeFullName") or prof.get("exchange") or None,
+            "sector": prof.get("sector") or None,
+            "industry": prof.get("industry") or None,
+            "source": "FMP (company filings)",
+        })
+        return out
+
+    # ---- Yahoo fallback (longBusinessSummary) ----
+    try:
+        info = yf.Ticker(ticker).info or {}
+        summary = info.get("longBusinessSummary")
+        if summary:
+            hq = ", ".join(p for p in [info.get("city"), info.get("state"),
+                                       info.get("country")] if p)
+            ceo = None
+            for o in (info.get("companyOfficers") or []):
+                title = (o.get("title") or "").lower()
+                if "chief executive" in title or title.strip() == "ceo":
+                    ceo = o.get("name")
+                    break
+            emp = info.get("fullTimeEmployees")
+            out.update({
+                "name": info.get("shortName") or info.get("longName") or ticker,
+                "description": summary,
+                "ceo": ceo,
+                "employees": emp if isinstance(emp, (int, float)) else None,
+                "website": info.get("website") or None,
+                "hq": hq or None,
+                "exchange": info.get("fullExchangeName") or None,
+                "sector": info.get("sector") or None,
+                "industry": info.get("industry") or None,
+                "source": "Yahoo Finance",
+            })
+    except Exception:
+        pass
+    return out
+
+
+def business_quality_read(row):
+    """Turn the quant metrics ALREADY computed for this ticker into a plain-English read of
+    *what kind of business this is* — pricing power, moat durability, cash quality, growth
+    phase, and balance-sheet risk. Thresholds are public/textbook (Damodaran / CFA style),
+    NOT any firm's proprietary model. Returns:
+        {'headline': str, 'archetype': str, 'points': [(dimension, tone, text), ...]}
+    where tone is one of '🟢' / '🟡' / '🔴'. Skips any dimension whose metric is missing."""
+    def f(k):
+        return safe_float(row.get(k))
+
+    gm = f("Gross Margin %")
+    om = f("Operating Margin %")
+    roic = f("ROIC Proxy %")
+    fcfy = f("FCF Yield %")
+    fcfc = f("FCF Conversion %")
+    revg = f("Revenue Growth %")
+    dte = f("Debt/Equity")
+
+    points = []
+
+    # 1) Pricing power — gross margin
+    if gm is not None:
+        if gm >= 60:
+            points.append(("Pricing power", "🟢", f"Gross margin of {gm:.0f}% is very high — the product commands a premium and direct costs are a small slice of revenue. Typical of brands, software, and IP-driven businesses with real pricing power."))
+        elif gm >= 40:
+            points.append(("Pricing power", "🟢", f"Gross margin of {gm:.0f}% is healthy — solid pricing power and room to absorb input-cost swings."))
+        elif gm >= 20:
+            points.append(("Pricing power", "🟡", f"Gross margin of {gm:.0f}% is moderate — a more competitive, cost-sensitive business where scale and efficiency matter."))
+        else:
+            points.append(("Pricing power", "🔴", f"Gross margin of {gm:.0f}% is thin — a price-taking business (commodity, distribution, or heavy manufacturing). Small cost moves swing profit hard."))
+
+    # 2) Operating efficiency — operating margin
+    if om is not None:
+        if om >= 25:
+            points.append(("Operating efficiency", "🟢", f"Operating margin of {om:.0f}% is strong — the cost base converts a large share of sales into operating profit."))
+        elif om >= 12:
+            points.append(("Operating efficiency", "🟢", f"Operating margin of {om:.0f}% is solid for most industries."))
+        elif om >= 5:
+            points.append(("Operating efficiency", "🟡", f"Operating margin of {om:.0f}% is modest — profits are sensitive to cost and volume swings."))
+        elif om >= 0:
+            points.append(("Operating efficiency", "🔴", f"Operating margin of {om:.0f}% is slim — little cushion between revenue and the cost of running the business."))
+        else:
+            points.append(("Operating efficiency", "🔴", f"Operating margin is negative ({om:.0f}%) — the core business isn't profitable at the operating line yet."))
+
+    # 3) Capital efficiency / moat — ROIC proxy
+    if roic is not None:
+        if roic >= 15:
+            points.append(("Capital efficiency (moat)", "🟢", f"ROIC proxy of {roic:.0f}% is well above a typical ~8-10% cost of capital — the business earns strong returns on the money it invests. Sustained high ROIC is the clearest quantitative fingerprint of a competitive moat."))
+        elif roic >= 8:
+            points.append(("Capital efficiency (moat)", "🟡", f"ROIC proxy of {roic:.0f}% roughly covers the cost of capital — the business creates value, but no wide moat is evident from returns alone."))
+        else:
+            points.append(("Capital efficiency (moat)", "🔴", f"ROIC proxy of {roic:.0f}% is below a typical cost of capital — as measured, invested capital isn't earning its keep. Watch for a cyclical trough or a genuinely low-return model."))
+
+    # 4) Cash quality — FCF conversion + yield
+    if fcfy is not None or fcfc is not None:
+        if fcfc is not None and fcfc >= 80 and (fcfy is None or fcfy >= 3):
+            points.append(("Cash quality", "🟢", f"Cash generation is high-quality — {fcfc:.0f}% of operating cash flow drops through to free cash flow" + (f", a {fcfy:.1f}% FCF yield on price." if fcfy is not None else ".") + " Reported earnings are backed by real cash."))
+        elif fcfc is not None and fcfc >= 50:
+            points.append(("Cash quality", "🟡", f"Cash conversion of {fcfc:.0f}% is decent — a meaningful chunk of profit reaches free cash flow, though capex or working capital takes a bite."))
+        elif fcfc is not None:
+            points.append(("Cash quality", "🔴", f"Cash conversion of {fcfc:.0f}% is low — earnings aren't turning into free cash. Capital intensity, working-capital drag, or earnings quality is worth a close look."))
+        elif fcfy is not None:
+            tone = "🟢" if fcfy >= 4 else ("🟡" if fcfy >= 1 else "🔴")
+            points.append(("Cash quality", tone, f"Free-cash-flow yield of {fcfy:.1f}% on price — {'generous' if fcfy >= 4 else ('modest' if fcfy >= 1 else 'thin or negative')} cash return for owners at today's valuation."))
+
+    # 5) Growth phase — revenue growth
+    if revg is not None:
+        if revg >= 20:
+            points.append(("Growth phase", "🟢", f"Revenue growing ~{revg:.0f}% — a genuine growth business. The thesis rides on that growth persisting; watch for deceleration."))
+        elif revg >= 8:
+            points.append(("Growth phase", "🟢", f"Revenue growing ~{revg:.0f}% — steady, above-inflation top-line expansion."))
+        elif revg >= 0:
+            points.append(("Growth phase", "🟡", f"Revenue growing ~{revg:.0f}% — mature, low-growth. Returns lean on margins, buybacks, and dividends more than expansion."))
+        else:
+            points.append(("Growth phase", "🔴", f"Revenue shrinking ~{revg:.0f}% — the top line is contracting. Confirm whether it's cyclical or structural before underwriting a recovery."))
+
+    # 6) Balance-sheet risk — debt/equity
+    if dte is not None:
+        if dte < 50:
+            points.append(("Balance sheet", "🟢", f"Debt/equity of {dte:.0f}% is conservative — low leverage gives the business staying power through a downturn."))
+        elif dte < 100:
+            points.append(("Balance sheet", "🟢", f"Debt/equity of {dte:.0f}% is moderate — a manageable, common capital structure."))
+        elif dte < 200:
+            points.append(("Balance sheet", "🟡", f"Debt/equity of {dte:.0f}% is elevated — leverage amplifies both returns and risk; earnings stability matters more here."))
+        else:
+            points.append(("Balance sheet", "🔴", f"Debt/equity of {dte:.0f}% is high — a heavily levered balance sheet. Fine for stable cash cows and financials, dangerous for cyclicals."))
+
+    # ---- Archetype headline: synthesize the quality dimensions into one label ----
+    hi_quality = sum(bool(x) for x in [
+        gm is not None and gm >= 45,
+        roic is not None and roic >= 15,
+        fcfc is not None and fcfc >= 70,
+    ])
+    levered = dte is not None and dte >= 150
+    growthy = revg is not None and revg >= 15
+    shrinking = revg is not None and revg < 0
+    cashcow = (fcfy is not None and fcfy >= 4) and (revg is not None and revg < 8)
+    weak = (roic is not None and roic < 8) or (om is not None and om < 3)
+
+    if hi_quality >= 2 and not shrinking:
+        archetype = "High-quality compounder"
+        headline = "Strong margins and high returns on capital — the profile of a durable, capital-efficient business that can compound over time. The question is usually price, not quality."
+    elif growthy and (gm is None or gm >= 40):
+        archetype = "Growth business"
+        headline = "A growth-oriented business — the story rides on the top line continuing to expand. Reward if it persists, sharp de-rating if growth stalls."
+    elif cashcow:
+        archetype = "Mature cash cow"
+        headline = "Low growth but generous free cash flow — a mature cash generator. Returns come from the cash it hands back (dividends/buybacks) more than from expansion."
+    elif levered and weak:
+        archetype = "Levered / capital-intensive"
+        headline = "A capital-intensive or cyclical profile with meaningful leverage — returns and risk are both amplified. Balance sheet and where we sit in the cycle drive the outcome."
+    elif shrinking or weak:
+        archetype = "Turnaround / show-me"
+        headline = "The numbers flag a lower-quality or contracting business right now — a 'show-me' situation. Any thesis needs a concrete catalyst for returns or growth to inflect."
+    else:
+        archetype = "Mixed profile"
+        headline = "A mixed-quality profile — no single dimension dominates. Read the strengths and weak spots below and weigh which matter most for your thesis."
+
+    return {"headline": headline, "archetype": archetype, "points": points}
+
+
 def fetch_fmp_fundamentals(ticker):
     """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
     DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
@@ -3956,10 +4143,50 @@ def stock_deep_dive():
                 price_with_fair_value(hist, row.get("Fair Value Low"), row.get("Fair Value High"), row.get("Fair Value")),
                 width="stretch",
             )
-        tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab7 = st.tabs([
-            "Master Scores", "Valuation + Cash Flow", "Quality + Health",
+        tab_biz, tab1, tab2, tab3, tab8, tab4, tab5, tab6, tab7 = st.tabs([
+            "🏢 The Business", "Master Scores", "Valuation + Cash Flow", "Quality + Health",
             "📊 Analyst View", "Momentum + News", "Bull vs Bear", "🤖 AI Analyst", "Metric Guide"
         ])
+        with tab_biz:
+            st.subheader("Know the Business")
+            st.caption("What you actually own — before the scores. What the company does, who runs it, and a plain-English read of business quality built from the metrics on the other tabs.")
+            profile = fetch_company_profile(ticker)
+            if profile.get("description"):
+                facts = []
+                if profile.get("ceo"):
+                    facts.append(("CEO", profile["ceo"]))
+                if profile.get("employees"):
+                    facts.append(("Employees", f"{profile['employees']:,}"))
+                if profile.get("hq"):
+                    facts.append(("Headquarters", profile["hq"]))
+                if profile.get("ipo_date"):
+                    facts.append(("Public since", profile["ipo_date"]))
+                if profile.get("exchange"):
+                    facts.append(("Listed on", profile["exchange"]))
+                facts.append(("Sector / Industry",
+                              f"{profile.get('sector') or row['Sector']} · {profile.get('industry') or row['Industry']}"))
+                st.write("**What they do**")
+                st.write(profile["description"])
+                if profile.get("website"):
+                    st.markdown(f"🌐 [{profile['website']}]({profile['website']})")
+                st.write("**Key facts**")
+                fcols = st.columns(3)
+                for i, (label, val) in enumerate(facts):
+                    fcols[i % 3].markdown(f"**{label}**  \n{val}")
+                st.caption(f"Profile source: {profile.get('source', 'n/a')}")
+            else:
+                st.info("No company description available for this ticker from the current data source.")
+
+            st.divider()
+            bq = business_quality_read(row)
+            st.write("**Business-quality read**")
+            st.markdown(f"### {bq['archetype']}")
+            st.write(bq["headline"])
+            for dimension, tone, text in bq["points"]:
+                with st.container(border=True):
+                    st.markdown(f"{tone} **{dimension}**")
+                    st.write(text)
+            st.caption("Read built from this ticker's own quant metrics using public/textbook thresholds (Damodaran / CFA style). Research aid, not financial advice.")
         with tab1:
             st.subheader("Master Quant Scores")
             score_df = pd.DataFrame([
