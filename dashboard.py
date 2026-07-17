@@ -1951,6 +1951,172 @@ def business_quality_read(row):
     return {"headline": headline, "archetype": archetype, "points": points}
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def fetch_margin_history(ticker, years=5):
+    """Multi-year margin + ROIC history for moat/durability analysis, oldest→newest. FMP annual
+    ratios + key-metrics first (fullest — includes ROIC); yfinance income statement (margins
+    only, ~4y) as fallback. All public data. Returns [] when nothing usable is available.
+
+    NOTE: years defaults to 5 because the FMP free tier rejects annual `limit` > 5 (returns
+    nothing) — a larger value would silently drop the whole FMP path (incl. ROIC) to Yahoo."""
+    rows = []
+    ratios = _fmp_get_list(f"ratios?symbol={ticker}&period=annual&limit={years}")
+    if ratios:
+        km = _fmp_get_list(f"key-metrics?symbol={ticker}&period=annual&limit={years}") or []
+        roic_by_year = {}
+        for k in km:
+            yr = str(k.get("fiscalYear") or str(k.get("date", ""))[:4])
+            roic_by_year[yr] = safe_float(k.get("returnOnInvestedCapital"))
+
+        def pct(v):
+            v = safe_float(v)
+            return v * 100 if v is not None else None
+
+        for x in ratios:
+            yr = str(x.get("fiscalYear") or str(x.get("date", ""))[:4])
+            if not yr:
+                continue
+            roic = roic_by_year.get(yr)
+            rows.append({"year": yr,
+                         "gross": pct(x.get("grossProfitMargin")),
+                         "operating": pct(x.get("operatingProfitMargin")),
+                         "net": pct(x.get("netProfitMargin")),
+                         "roic": roic * 100 if roic is not None else None})
+        rows.sort(key=lambda r: r["year"])
+        if rows:
+            return rows
+
+    # yfinance fallback — margins only, no ROIC (typically ~4 fiscal years)
+    try:
+        fin = yf.Ticker(ticker).income_stmt
+        if fin is not None and not fin.empty:
+            idx = fin.index
+            rev = fin.loc["Total Revenue"] if "Total Revenue" in idx else None
+            gp = fin.loc["Gross Profit"] if "Gross Profit" in idx else None
+            oi = fin.loc["Operating Income"] if "Operating Income" in idx else None
+            ni = fin.loc["Net Income"] if "Net Income" in idx else None
+            if rev is not None:
+                for col in fin.columns:
+                    rv = safe_float(rev.get(col))
+                    if not rv:
+                        continue
+
+                    def m(s):
+                        val = safe_float(s.get(col)) if s is not None else None
+                        return (val / rv * 100) if val is not None else None
+
+                    rows.append({"year": str(getattr(col, "year", col)),
+                                 "gross": m(gp), "operating": m(oi), "net": m(ni), "roic": None})
+                rows.sort(key=lambda r: r["year"])
+    except Exception:
+        pass
+    return rows
+
+
+def _series_trend(series):
+    """Classify a numeric series (oldest→newest, Nones allowed) as rising/stable/falling and
+    steady/volatile. Compares the early-third average to the recent-third average; volatility
+    via coefficient of variation. Returns None if fewer than 3 real points."""
+    vals = [v for v in series if v is not None]
+    n = len(vals)
+    if n < 3:
+        return None
+    third = max(1, n // 3)
+    early = sum(vals[:third]) / third
+    recent = sum(vals[-third:]) / third
+    delta = recent - early
+    mean = sum(vals) / n
+    std = (sum((v - mean) ** 2 for v in vals) / n) ** 0.5
+    cov = (std / abs(mean)) if mean else 999
+    direction = "rising" if delta > 2 else ("falling" if delta < -2 else "stable")
+    return {"direction": direction, "delta": delta, "std": std, "cov": cov,
+            "steady": cov < 0.20, "early": early, "recent": recent, "last": vals[-1], "n": n}
+
+
+def moat_durability_read(history):
+    """From multi-year margin/ROIC history, judge competitive-advantage DURABILITY — the trend
+    and stability behind the one-moment snapshot. Widening moat = high, steady margins with ROIC
+    rising; eroding = margins/returns falling. Public/textbook quality lens (Buffett/Damodaran),
+    NOT any proprietary model. Returns {'verdict','headline','points':[(dim,tone,text)]} or None."""
+    if not history or len(history) < 3:
+        return None
+    gm_t = _series_trend([h["gross"] for h in history])
+    om_t = _series_trend([h["operating"] for h in history])
+    roic_t = _series_trend([h["roic"] for h in history])
+    span = f"{history[0]['year']}–{history[-1]['year']}"
+
+    points = []
+    if gm_t:
+        lvl, stab = gm_t["last"], ("steady" if gm_t["steady"] else "volatile")
+        if gm_t["direction"] == "rising":
+            points.append(("Gross-margin trend", "🟢", f"Gross margin has expanded to ~{lvl:.0f}% over {span} (up ~{gm_t['delta']:.0f} pts) and is {stab} — pricing power is holding or strengthening."))
+        elif gm_t["direction"] == "falling":
+            points.append(("Gross-margin trend", "🔴", f"Gross margin has slipped to ~{lvl:.0f}% over {span} (down ~{abs(gm_t['delta']):.0f} pts) — a possible sign of eroding pricing power or rising input costs."))
+        else:
+            tone = "🟢" if gm_t["steady"] else "🟡"
+            tail = "remarkably stable, a hallmark of a durable advantage." if gm_t["steady"] else "broadly flat but bounces around — more cyclical than locked-in."
+            points.append(("Gross-margin trend", tone, f"Gross margin has held ~{lvl:.0f}% across {span} ({stab}) — {tail}"))
+    if roic_t:
+        lvl = roic_t["last"]
+        if roic_t["direction"] == "rising" and lvl >= 12:
+            points.append(("ROIC trend (moat)", "🟢", f"Return on invested capital has risen to ~{lvl:.0f}% over {span} — a widening moat: the business earns more on each dollar it invests, well above a typical ~8-10% cost of capital."))
+        elif roic_t["direction"] == "falling":
+            points.append(("ROIC trend (moat)", "🔴", f"ROIC has declined to ~{lvl:.0f}% over {span} — returns on capital are compressing, which can signal competition eroding the moat or heavier reinvestment at lower returns."))
+        elif lvl >= 12:
+            points.append(("ROIC trend (moat)", "🟢", f"ROIC has stayed high (~{lvl:.0f}%) and steady across {span} — sustained high returns on capital are the clearest quantitative fingerprint of a durable moat."))
+        else:
+            points.append(("ROIC trend (moat)", "🟡", f"ROIC has run ~{lvl:.0f}% over {span} — around or below the cost of capital, so no strong moat is evident from returns alone."))
+    if om_t:
+        if om_t["steady"]:
+            points.append(("Earnings stability", "🟢", f"Operating margin has been steady across {span} (low variability) — earnings are relatively predictable, not whipsawed by the cycle."))
+        else:
+            points.append(("Earnings stability", "🟡", f"Operating margin has swung around across {span} (high variability) — a more cyclical earnings profile; judge quality across a full cycle, not one year."))
+
+    gm_dir = gm_t["direction"] if gm_t else None
+    roic_dir = roic_t["direction"] if roic_t else None
+    roic_lvl = roic_t["last"] if roic_t else None
+    steady = bool((gm_t and gm_t["steady"]) or (om_t and om_t["steady"]))
+    high_returns = roic_lvl is not None and roic_lvl >= 12
+
+    if roic_dir == "rising" and gm_dir in ("rising", "stable") and high_returns:
+        verdict = "Widening moat"
+        headline = f"Over {span}, returns on capital are climbing while margins hold or rise — the signature of a competitive advantage getting stronger, not merely persisting."
+    elif high_returns and steady and roic_dir != "falling":
+        verdict = "Durable moat"
+        headline = f"High, steady returns and stable margins across {span} — a durable competitive advantage. The moat is holding; watch that it doesn't quietly begin to erode."
+    elif gm_dir == "falling" or roic_dir == "falling":
+        verdict = "Eroding advantage"
+        headline = f"Margins and/or returns on capital have trended down across {span} — the competitive position looks like it's weakening. Understand *why* before assuming it stabilizes."
+    elif (om_t and not om_t["steady"]) and not high_returns:
+        verdict = "Cyclical / no clear moat"
+        headline = f"Returns are unexceptional and margins swing with the cycle across {span} — this reads more like a price-taker or cyclical than a moaty compounder."
+    else:
+        verdict = "Mixed / inconclusive"
+        headline = f"The {span} history is mixed — no single durability signal dominates. Read the dimensions below and weigh them for your thesis."
+
+    return {"verdict": verdict, "headline": headline, "points": points}
+
+
+def moat_history_chart(history):
+    """Line chart of margins + ROIC over the available years — the visual behind the moat read."""
+    if not history or len(history) < 3:
+        return None
+    yrs = [h["year"] for h in history]
+    fig = go.Figure()
+    for name, key, color in [("Gross margin", "gross", "#4C9AFF"),
+                             ("Operating margin", "operating", "#8B7CF6"),
+                             ("Net margin", "net", "#9AA5B1"),
+                             ("ROIC", "roic", ACCENT)]:
+        ys = [h.get(key) for h in history]
+        if any(v is not None for v in ys):
+            fig.add_trace(go.Scatter(x=yrs, y=ys, mode="lines+markers", name=name,
+                                     line=dict(color=color, width=2), connectgaps=True,
+                                     hovertemplate=f"{name}: %{{y:.1f}}%<extra></extra>"))
+    fig.update_xaxes(gridcolor=CHART_GRID, title="Fiscal year")
+    fig.update_yaxes(gridcolor=CHART_GRID, title="%", ticksuffix="%")
+    return _style_fig(fig, height=340)
+
+
 def fetch_fmp_fundamentals(ticker):
     """Build a yfinance-style `info` dict from FMP (SEC-sourced ratios). Raises
     DataUnavailable if FMP has no profile for the ticker. Prices/news still come from
@@ -4279,6 +4445,27 @@ def stock_deep_dive():
                     st.markdown(f"{tone} **{dimension}**")
                     st.write(text)
             st.caption("Read built from this ticker's own quant metrics using public/textbook thresholds (Damodaran / CFA style). Research aid, not financial advice.")
+
+            st.divider()
+            st.write("**Moat & durability (multi-year)**")
+            st.caption("The snapshot above is one moment; durability is about the trajectory. This reads several years of margins and returns on capital to judge whether the competitive advantage is widening, holding, or eroding.")
+            history = fetch_margin_history(ticker)
+            moat = moat_durability_read(history)
+            if not moat:
+                st.info("Not enough multi-year history available to assess durability for this ticker.")
+            else:
+                st.markdown(f"### {moat['verdict']}")
+                st.write(moat["headline"])
+                chart = moat_history_chart(history)
+                if chart is not None:
+                    st.plotly_chart(chart, width="stretch")
+                for dim, tone, text in moat["points"]:
+                    with st.container(border=True):
+                        st.markdown(f"{tone} **{dim}**")
+                        st.write(text)
+                if all(h.get("roic") is None for h in history):
+                    st.caption("Note: ROIC history wasn't available from the fallback source, so the durability read here is based on margins only.")
+                st.caption("Multi-year read from public financials (FMP / Yahoo) using a textbook quality lens (Buffett / Damodaran). Research aid, not financial advice.")
         with tab1:
             st.subheader("Master Quant Scores")
             score_df = pd.DataFrame([
