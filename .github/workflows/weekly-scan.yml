@@ -30,6 +30,9 @@ jobs:
         run: python run_scan.py
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          # Optional Telegram alerts — leave unset to disable (scan runs regardless).
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Commit updated scores
         run: |

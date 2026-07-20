@@ -49,6 +49,22 @@ def main():
     d.save_sp500_scores(pd.DataFrame(rows))   # merge=True -> accumulates coverage, keeps other sectors
     print(f"\nSaved {len(rows)} scores. Skipped {len(failures)}: {failures}", flush=True)
 
+    # Optional Telegram alert on the day's best ideas. Never fatal — a notification failure
+    # must not fail the scan (the job that actually matters).
+    try:
+        import notify
+        if notify.telegram_enabled():
+            msg = notify.build_scan_alert(rows, label=datetime.date.today().isoformat())
+            if msg:
+                sent = notify.send_telegram(msg)
+                print(f"Telegram alert: {'sent' if sent else 'send failed'}", flush=True)
+            else:
+                print("Telegram: nothing cleared the alert bar today — no message sent.", flush=True)
+        else:
+            print("Telegram not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID) — skipping alert.", flush=True)
+    except Exception as e:
+        print(f"Notify step error (non-fatal): {str(e)[:140]}", flush=True)
+
 
 if __name__ == "__main__":
     main()
