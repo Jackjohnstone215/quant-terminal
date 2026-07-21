@@ -3795,6 +3795,9 @@ def fetch_market_valuation():
         out["earnings_yield"] = round(100.0 / out["pe"], 2)
     if out["earnings_yield"] is not None and out["tnx"] is not None:
         out["erp"] = round(out["earnings_yield"] - out["tnx"], 2)
+    # 10-yr market-implied inflation (breakeven) — feeds the building-blocks model.
+    _, infl = _fred_latest("T10YIE")
+    out["inflation"] = infl
     return out
 
 
@@ -3898,14 +3901,261 @@ def render_long_term_outlook(compact=False):
     st.caption("Sources: Shiller CAPE / S&P P/E / dividend yield via multpl.com; 10-yr Treasury via Yahoo. Public/textbook methodology — research aid, not financial advice.")
 
 
+# ---------------- FORECASTING: FRED-powered long-run + near-term models ----------------
+# FRED's fredgraph.csv endpoint is public and KEYLESS, so these need no API key.
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def _fred_series(series_id):
+    """Full history of a FRED series as a list of (iso_date, float) via the keyless CSV endpoint.
+    Returns [] on any failure so callers degrade gracefully."""
+    try:
+        url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 quant-terminal research"})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            lines = r.read().decode("utf-8", "replace").strip().splitlines()
+        out = []
+        for ln in lines[1:]:
+            parts = ln.split(",")
+            if len(parts) >= 2 and parts[-1] not in ("", ".", "NA"):
+                try:
+                    out.append((parts[0], float(parts[-1])))
+                except ValueError:
+                    pass
+        return out
+    except Exception:
+        return []
+
+
+def _fred_latest(series_id):
+    s = _fred_series(series_id)
+    return s[-1] if s else (None, None)
+
+
+def _linreg(xs, ys):
+    """Ordinary least-squares slope, intercept, R^2 — pure stdlib (no numpy dependency)."""
+    n = len(xs)
+    sx, sy = sum(xs), sum(ys)
+    sxx = sum(x * x for x in xs)
+    sxy = sum(x * y for x, y in zip(xs, ys))
+    denom = (n * sxx - sx * sx) or 1e-9
+    slope = (n * sxy - sx * sy) / denom
+    intercept = (sy - slope * sx) / n
+    ybar = sy / n
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
+    ss_tot = sum((y - ybar) ** 2 for y in ys) or 1e-9
+    return slope, intercept, 1 - ss_res / ss_tot
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def compute_aiae():
+    """Average Investor Allocation to Equities = equities / (equities + debt/cash), from the
+    Fed's quarterly Financial Accounts (Z.1) via FRED. Per Philosophical Economics / Micaletti,
+    historically the single strongest predictor of forward 10-yr S&P returns — it beats CAPE,
+    Tobin's Q, and market-cap/GDP. Returns {'aiae','date','pct_rank','history'} or None."""
+    eq_ids = ["NCBEILQ027S", "FBCELLQ027S"]
+    debt_ids = ["FGSDODNS", "CMDEBT", "BCNSDODNS", "DODFFSWCMI", "SLGSDODNS"]
+    series = {sid: dict(_fred_series(sid)) for sid in eq_ids + debt_ids}
+    if any(not series[sid] for sid in eq_ids + debt_ids):
+        return None
+    dates = set(series[eq_ids[0]])
+    for sid in eq_ids + debt_ids:
+        dates &= set(series[sid])
+    dates = sorted(dates)
+    if len(dates) < 40:
+        return None
+    hist = []
+    for d in dates:
+        E = sum(series[s][d] for s in eq_ids)
+        D = sum(series[s][d] for s in debt_ids)
+        if (E + D) > 0:
+            hist.append((d, E / (E + D)))
+    if not hist:
+        return None
+    cur = hist[-1][1]
+    vals = [v for _, v in hist]
+    pct = 100.0 * sum(1 for v in vals if v <= cur) / len(vals)
+    return {"aiae": cur, "date": hist[-1][0], "pct_rank": pct, "history": hist}
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def aiae_forecast():
+    """Regress historical AIAE against realized forward 10-yr S&P total returns (^SP500TR), then
+    apply the fit to today's AIAE. Returns {'forecast','r2','n','aiae','pct_rank'} (forecast =
+    nominal annualized %) or None. Windows overlap so R^2 is illustrative, not gospel."""
+    a = compute_aiae()
+    if not a:
+        return None
+    tr = _yf_history("^SP500TR", period="max")
+    if tr is None or tr.empty or "Close" not in tr.columns:
+        return None
+    closes = tr["Close"].dropna()
+    idx = pd.to_datetime(closes.index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)
+    ser = pd.Series(closes.values, index=idx).sort_index()
+    pairs = []
+    for d, a_val in a["history"]:
+        dt = pd.to_datetime(d)
+        past = ser[ser.index <= dt]
+        fut = ser[ser.index >= dt + pd.DateOffset(years=10)]
+        if len(past) and len(fut):
+            pairs.append((a_val, (float(fut.iloc[0]) / float(past.iloc[-1])) ** 0.1 - 1))
+    if len(pairs) < 20:
+        return None
+    slope, intercept, r2 = _linreg([p[0] for p in pairs], [p[1] for p in pairs])
+    return {"forecast": (slope * a["aiae"] + intercept) * 100, "r2": r2, "n": len(pairs),
+            "aiae": a["aiae"] * 100, "pct_rank": a["pct_rank"]}
+
+
+def building_blocks_forecast(val):
+    """Bogle/Damodaran building-blocks 10-yr expected NOMINAL return = dividend yield + real
+    earnings growth + inflation + annualized CAPE mean-reversion. Bull/base/bear vary the growth
+    assumption and the reversion target (the dominant swing — shown explicitly). Returns
+    {'scenarios':[(name, nominal%, real%, note)], 'inputs':{...}} or None."""
+    cape, dy, infl = val.get("cape"), val.get("div_yield"), val.get("inflation")
+    if not cape or dy is None or infl is None:
+        return None
+    mean = val.get("cape_mean", 17.4)
+
+    def scen(name, growth, target):
+        val_chg = ((target / cape) ** 0.1 - 1) * 100
+        nominal = dy + growth + infl + val_chg
+        return (name, round(nominal, 1), round(nominal - infl, 1), f"real growth {growth:.1f}%, CAPE→{target:.0f}")
+
+    return {"scenarios": [scen("Bull", 2.5, cape), scen("Base", 1.5, 25.0), scen("Bear", 1.0, mean)],
+            "inputs": {"cape": cape, "div_yield": dy, "inflation": infl}}
+
+
+def recession_dashboard():
+    """Near-term (6-18mo) recession/regime signals from FRED: yield curve, high-yield credit
+    spreads, the Sahm rule, and the unemployment trend. Each -> (label, tone, text). Returns
+    {'signals','risk','reds','yellows'} or None."""
+    sigs = []
+    curve3m = _fred_latest("T10Y3M")[1]
+    hy = _fred_latest("BAMLH0A0HYM2")[1]
+    sahm = _fred_latest("SAHMREALTIME")[1]
+    un_hist = _fred_series("UNRATE")
+    un_now = un_hist[-1][1] if un_hist else None
+    un_12 = un_hist[-13][1] if un_hist and len(un_hist) >= 13 else None
+
+    if curve3m is not None:
+        if curve3m < 0:
+            sigs.append(("Yield curve (10y–3m)", "🔴", f"Inverted ({curve3m:+.2f}%) — the most reliable recession lead; downturns have usually followed within ~6–18 months."))
+        elif curve3m < 0.3:
+            sigs.append(("Yield curve (10y–3m)", "🟡", f"Flat ({curve3m:+.2f}%) — late-cycle; watch for a dip below zero."))
+        else:
+            sigs.append(("Yield curve (10y–3m)", "🟢", f"Positive ({curve3m:+.2f}%) — no recession signal from the curve."))
+    if hy is not None:
+        if hy > 5:
+            sigs.append(("Credit spreads (high-yield)", "🔴", f"Wide ({hy:.1f}%) — credit markets are pricing stress and rising default risk."))
+        elif hy > 3.5:
+            sigs.append(("Credit spreads (high-yield)", "🟡", f"Widening ({hy:.1f}%) — some caution creeping into credit."))
+        else:
+            sigs.append(("Credit spreads (high-yield)", "🟢", f"Tight ({hy:.1f}%) — calm credit; note tight spreads also leave little cushion if sentiment turns."))
+    if sahm is not None:
+        if sahm >= 0.5:
+            sigs.append(("Sahm rule (jobs)", "🔴", f"Triggered ({sahm:.2f}) — the rise in unemployment is consistent with a recession already underway."))
+        elif sahm >= 0.3:
+            sigs.append(("Sahm rule (jobs)", "🟡", f"Rising ({sahm:.2f}) — labor market softening; not yet a trigger."))
+        else:
+            sigs.append(("Sahm rule (jobs)", "🟢", f"Benign ({sahm:.2f}) — no labor-market recession signal."))
+    if un_now is not None and un_12 is not None:
+        d = un_now - un_12
+        if d >= 0.5:
+            sigs.append(("Unemployment trend", "🟡", f"Rising ({un_12:.1f}% → {un_now:.1f}%, {d:+.1f} pts YoY) — a late-cycle warning."))
+        else:
+            sigs.append(("Unemployment trend", "🟢", f"Stable/low ({un_now:.1f}%, {d:+.1f} pts YoY) — labor market healthy."))
+    if not sigs:
+        return None
+    reds = sum(1 for _, t, _ in sigs if t == "🔴")
+    yellows = sum(1 for _, t, _ in sigs if t == "🟡")
+    risk = "Elevated" if reds >= 2 else ("Moderate" if (reds >= 1 or yellows >= 2) else "Low")
+    return {"signals": sigs, "risk": risk, "reds": reds, "yellows": yellows}
+
+
+def render_market_forecast():
+    """Deep, two-horizon market forecast: a triangulated long-run expected-return estimate
+    (building-blocks + AIAE regression) and a near-term recession/regime dashboard, synthesized
+    into a bottom line. All public/textbook methodology — probabilistic ranges, not predictions."""
+    st.subheader("🔭 Market Forecast — estimating the decade ahead")
+    st.caption("What we know *now* that hints at the *future*. Long-run returns are driven by valuation and investor positioning; near-term risk by the cycle. This separates the two — and shows its work.")
+    val = fetch_market_valuation()
+    if not val or not val.get("cape"):
+        st.info("Forecast data is temporarily unavailable (sources unreachable). The underlying series update slowly — try again shortly.")
+        return
+
+    bb = building_blocks_forecast(val)
+    ai = aiae_forecast()
+
+    st.markdown("### 📈 Long-run expected return (next ~10 years)")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Shiller CAPE", f"{val['cape']:.1f}", f"vs ~{val['cape_mean']:.0f} avg", delta_color="off")
+    if ai:
+        m2.metric("Investor equity allocation", f"{ai['aiae']:.0f}%", f"{ai['pct_rank']:.0f}th %ile of history", delta_color="off")
+    m3.metric("Stocks − bonds yield", f"{val['erp']:+.1f} pts" if val.get("erp") is not None else "—", "risk premium", delta_color="off")
+
+    if bb:
+        st.markdown("**Method 1 — building blocks** (dividend yield + real growth + inflation + valuation mean-reversion):")
+        rows = [{"Scenario": n, "Nominal 10-yr": f"{nom:+.1f}%/yr", "Real 10-yr": f"{real:+.1f}%/yr", "Assumes": note}
+                for (n, nom, real, note) in bb["scenarios"]]
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.caption(f"Inputs now: dividend yield {bb['inputs']['div_yield']:.1f}% · inflation (10-yr breakeven) {bb['inputs']['inflation']:.1f}% · CAPE {bb['inputs']['cape']:.0f}. The reversion assumption is the dominant swing — hence the scenario spread.")
+    if ai:
+        st.markdown("**Method 2 — investor allocation regression** (the strongest historical predictor):")
+        st.markdown(f"With equity allocation at **{ai['aiae']:.0f}%** ({ai['pct_rank']:.0f}th percentile of history since 1945), the fit points to roughly **{ai['forecast']:+.1f}%/yr nominal** over the next decade.")
+        st.caption(f"Fit on {ai['n']} historical windows, R² ≈ {ai['r2']:.2f}. Windows overlap so R² overstates precision — treat it as a direction and rough magnitude, not a promise.")
+
+    # synthesis of the long-run estimates
+    ests = []
+    if bb:
+        ests.append(("Base (building blocks)", bb["scenarios"][1][1]))   # Base scenario, nominal
+    if ai:
+        ests.append(("Allocation model", ai["forecast"]))
+    if ests:
+        lo = min(e[1] for e in ests)
+        hi = max(e[1] for e in ests)
+        st.markdown(f"➡️ **Long-run read:** independent methods cluster around **~{lo:+.0f}% to {hi:+.0f}%/yr nominal** — before inflation of ~{val.get('inflation', 2.3):.1f}%, so *real* returns from here look thin. That's the price of buying at high valuations.")
+
+    st.divider()
+    st.markdown("### ⚠️ Near-term recession & regime risk (6–18 months)")
+    rec = recession_dashboard()
+    if not rec:
+        st.info("Recession-signal data unavailable right now.")
+    else:
+        badge = {"Low": "🟢", "Moderate": "🟡", "Elevated": "🔴"}[rec["risk"]]
+        st.markdown(f"**{badge} Recession risk: {rec['risk']}** ({rec['reds']} red, {rec['yellows']} amber of {len(rec['signals'])} signals)")
+        for label, tone, text in rec["signals"]:
+            with st.container(border=True):
+                st.markdown(f"{tone} **{label}**")
+                st.write(text)
+
+    st.divider()
+    st.markdown("### 🧭 Bottom line")
+    read = long_term_market_read(val)
+    if read and rec:
+        st.markdown(
+            f"**Near term:** recession risk looks **{rec['risk'].lower()}** — the economy isn't flashing an imminent-downturn signal. "
+            f"**Long term:** the market is **{read['verdict'].lower()}**, and both return models point to thin real returns over the decade. "
+            "Translation: the danger here is *not* a crash next quarter — it's paying a rich price today and earning little over ten years. "
+            "That's an argument for discipline and expectations, not for fleeing the market."
+        )
+    if read:
+        st.markdown("**What a long-term investor should do**")
+        for a in read["actions"]:
+            st.markdown(f"- {a}")
+        for c in read["caveats"]:
+            st.caption("⚠️ " + c)
+    st.caption("Sources: FRED (yield curve, credit spreads, Sahm rule, unemployment, inflation breakeven, Fed Z.1 for investor allocation); multpl.com (CAPE, P/E, yield); Yahoo (S&P total return, 10-yr). Public/textbook methodology — research aid, not financial advice.")
+
+
 def market_command_center():
     st.title("Market Command Center")
     st.caption("The long-term valuation picture first, then today's market health, news, and movers.")
     if st.button("Refresh Market Command Center", type="primary"):
         st.cache_data.clear()
 
-    # Lead with the long view; the short-term health/news below is secondary context.
-    render_long_term_outlook()
+    # Lead with the deep long-run + near-term forecast; short-term health/news is secondary.
+    render_market_forecast()
     st.divider()
     st.subheader("Today's Market (short-term context)")
     st.caption("Useful for awareness, but day-to-day moves say little about long-run returns — don't trade on them.")
