@@ -3887,6 +3887,13 @@ def render_long_term_outlook(compact=False):
     m4.metric("Stocks − bonds yield", f"{val['erp']:+.1f} pts" if val.get("erp") is not None else "—",
               "risk premium", delta_color="off")
 
+    # One-line consensus punchline for the glance page (full model breakdown lives in Market
+    # Command Center → Market Forecast).
+    cons = consensus_forecast(val)
+    if cons:
+        st.markdown(f"#### 🧭 10-year outlook: **~{cons['consensus']:+.1f}%/yr nominal · ~{cons['real']:+.1f}%/yr real**")
+        st.caption(f"Consensus of {cons['n']} models (range {cons['low']:+.1f}% to {cons['high']:+.1f}%/yr). Full breakdown in **Market Command Center → Market Forecast**.")
+
     st.markdown(f"### {read['tone']} Market valuation: {read['verdict']}")
     st.markdown(read["headline"])
     for label, tone, text in read["points"]:
@@ -4007,6 +4014,77 @@ def aiae_forecast():
             "aiae": a["aiae"] * 100, "pct_rank": a["pct_rank"]}
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def cape_history():
+    """Monthly Shiller CAPE since 1871 from multpl.com's data table (newest first). The value
+    cell carries an &#x2002; entity, so unescape BEFORE parsing. Returns [(date_str, value)]."""
+    import re
+    from html import unescape
+    try:
+        req = urllib.request.Request("https://www.multpl.com/shiller-pe/table/by-month",
+                                     headers={"User-Agent": "Mozilla/5.0 quant-terminal research"})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            html = unescape(r.read().decode("utf-8", "replace"))
+        rows = re.findall(r"<td>\s*([A-Z][a-z]{2} \d{1,2}, \d{4})\s*</td>\s*<td>\s*([0-9]+\.[0-9]+)", html)
+        return [(dt, float(v)) for dt, v in rows]
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def cape_forecast():
+    """Regress historical Shiller CAPE against realized forward 10-yr S&P total returns and apply
+    the fit to today's CAPE — a third, independent long-run estimate. Returns
+    {'forecast','r2','n','cape'} (nominal annualized %) or None."""
+    hist = cape_history()
+    if len(hist) < 60:
+        return None
+    tr = _yf_history("^SP500TR", period="max")
+    if tr is None or tr.empty or "Close" not in tr.columns:
+        return None
+    closes = tr["Close"].dropna()
+    idx = pd.to_datetime(closes.index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)
+    ser = pd.Series(closes.values, index=idx).sort_index()
+    pairs = []
+    for dt_s, c in hist:
+        dt = pd.to_datetime(dt_s)
+        past = ser[ser.index <= dt]
+        fut = ser[ser.index >= dt + pd.DateOffset(years=10)]
+        if len(past) and len(fut):
+            pairs.append((c, (float(fut.iloc[0]) / float(past.iloc[-1])) ** 0.1 - 1))
+    if len(pairs) < 20:
+        return None
+    slope, intercept, r2 = _linreg([p[0] for p in pairs], [p[1] for p in pairs])
+    return {"forecast": (slope * hist[0][1] + intercept) * 100, "r2": r2, "n": len(pairs), "cape": hist[0][1]}
+
+
+def consensus_forecast(val):
+    """Combine the long-run methods into one estimate. Forecast COMBINATION — simply averaging
+    several predictors — reliably beats any single model out-of-sample (Rapach, Strauss & Zhou
+    2010), because it cancels each model's idiosyncratic error. We average the building-blocks
+    base case, the investor-allocation regression, and the CAPE regression. Returns
+    {'consensus','low','high','real','components':[(name, nominal%, r2)], 'n','inflation'} or None."""
+    comps = []
+    bb = building_blocks_forecast(val)
+    if bb:
+        comps.append(("Building blocks (base)", bb["scenarios"][1][1], None))
+    ai = aiae_forecast()
+    if ai:
+        comps.append(("Investor-allocation regression", round(ai["forecast"], 1), round(ai["r2"], 2)))
+    cf = cape_forecast()
+    if cf:
+        comps.append(("CAPE regression", round(cf["forecast"], 1), round(cf["r2"], 2)))
+    if not comps:
+        return None
+    vals = [c[1] for c in comps]
+    consensus = sum(vals) / len(vals)
+    infl = val.get("inflation") or 2.3
+    return {"consensus": round(consensus, 1), "low": round(min(vals), 1), "high": round(max(vals), 1),
+            "real": round(consensus - infl, 1), "components": comps, "n": len(comps), "inflation": infl}
+
+
 def building_blocks_forecast(val):
     """Bogle/Damodaran building-blocks 10-yr expected NOMINAL return = dividend yield + real
     earnings growth + inflation + annualized CAPE mean-reversion. Bull/base/bear vary the growth
@@ -4086,6 +4164,8 @@ def render_market_forecast():
 
     bb = building_blocks_forecast(val)
     ai = aiae_forecast()
+    cf = cape_forecast()
+    cons = consensus_forecast(val)
 
     st.markdown("### 📈 Long-run expected return (next ~10 years)")
     m1, m2, m3 = st.columns(3)
@@ -4094,6 +4174,15 @@ def render_market_forecast():
         m2.metric("Investor equity allocation", f"{ai['aiae']:.0f}%", f"{ai['pct_rank']:.0f}th %ile of history", delta_color="off")
     m3.metric("Stocks − bonds yield", f"{val['erp']:+.1f} pts" if val.get("erp") is not None else "—", "risk premium", delta_color="off")
 
+    # LEAD with the combined consensus — averaging predictors beats any single one out-of-sample.
+    if cons:
+        with st.container(border=True):
+            st.markdown(f"## 🎯 Consensus: ~{cons['consensus']:+.1f}%/yr nominal · ~{cons['real']:+.1f}%/yr real")
+            st.markdown(f"Combined from **{cons['n']} independent methods** (range {cons['low']:+.1f}% to {cons['high']:+.1f}%/yr nominal). Averaging predictors beats any single model out-of-sample — it cancels each one's idiosyncratic error (Rapach-Strauss-Zhou 2010).")
+            if cons["real"] < 1:
+                st.caption("Real (after-inflation) expected returns near zero — the arithmetic cost of buying at today's valuations.")
+        st.caption("The three methods below are the 'show your work' behind that number.")
+
     if bb:
         st.markdown("**Method 1 — building blocks** (dividend yield + real growth + inflation + valuation mean-reversion):")
         rows = [{"Scenario": n, "Nominal 10-yr": f"{nom:+.1f}%/yr", "Real 10-yr": f"{real:+.1f}%/yr", "Assumes": note}
@@ -4101,20 +4190,13 @@ def render_market_forecast():
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
         st.caption(f"Inputs now: dividend yield {bb['inputs']['div_yield']:.1f}% · inflation (10-yr breakeven) {bb['inputs']['inflation']:.1f}% · CAPE {bb['inputs']['cape']:.0f}. The reversion assumption is the dominant swing — hence the scenario spread.")
     if ai:
-        st.markdown("**Method 2 — investor allocation regression** (the strongest historical predictor):")
-        st.markdown(f"With equity allocation at **{ai['aiae']:.0f}%** ({ai['pct_rank']:.0f}th percentile of history since 1945), the fit points to roughly **{ai['forecast']:+.1f}%/yr nominal** over the next decade.")
-        st.caption(f"Fit on {ai['n']} historical windows, R² ≈ {ai['r2']:.2f}. Windows overlap so R² overstates precision — treat it as a direction and rough magnitude, not a promise.")
-
-    # synthesis of the long-run estimates
-    ests = []
-    if bb:
-        ests.append(("Base (building blocks)", bb["scenarios"][1][1]))   # Base scenario, nominal
-    if ai:
-        ests.append(("Allocation model", ai["forecast"]))
-    if ests:
-        lo = min(e[1] for e in ests)
-        hi = max(e[1] for e in ests)
-        st.markdown(f"➡️ **Long-run read:** independent methods cluster around **~{lo:+.0f}% to {hi:+.0f}%/yr nominal** — before inflation of ~{val.get('inflation', 2.3):.1f}%, so *real* returns from here look thin. That's the price of buying at high valuations.")
+        st.markdown("**Method 2 — investor-allocation regression** (per the research, the strongest single predictor):")
+        st.markdown(f"Equity allocation is **{ai['aiae']:.0f}%** ({ai['pct_rank']:.0f}th percentile since 1945) → fit points to **{ai['forecast']:+.1f}%/yr nominal**.")
+        st.caption(f"Fit on {ai['n']} overlapping 10-yr windows, R² ≈ {ai['r2']:.2f} (overlap overstates R² — read it as direction + rough magnitude).")
+    if cf:
+        st.markdown("**Method 3 — CAPE regression** (valuation → forward returns, 1871–today):")
+        st.markdown(f"At a CAPE of **{cf['cape']:.0f}**, the long-history fit points to **{cf['forecast']:+.1f}%/yr nominal**.")
+        st.caption(f"Fit on {cf['n']} overlapping 10-yr windows, R² ≈ {cf['r2']:.2f}.")
 
     st.divider()
     st.markdown("### ⚠️ Near-term recession & regime risk (6–18 months)")
@@ -4133,9 +4215,11 @@ def render_market_forecast():
     st.markdown("### 🧭 Bottom line")
     read = long_term_market_read(val)
     if read and rec:
+        cons_bit = (f"the consensus of the models points to **~{cons['consensus']:+.1f}%/yr nominal (~{cons['real']:+.1f}%/yr real)** over the decade"
+                    if cons else "the return models point to thin real returns over the decade")
         st.markdown(
             f"**Near term:** recession risk looks **{rec['risk'].lower()}** — the economy isn't flashing an imminent-downturn signal. "
-            f"**Long term:** the market is **{read['verdict'].lower()}**, and both return models point to thin real returns over the decade. "
+            f"**Long term:** the market is **{read['verdict'].lower()}**, and {cons_bit}. "
             "Translation: the danger here is *not* a crash next quarter — it's paying a rich price today and earning little over ten years. "
             "That's an argument for discipline and expectations, not for fleeing the market."
         )
