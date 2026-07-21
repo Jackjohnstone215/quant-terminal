@@ -3751,12 +3751,164 @@ def run_simple_backtest(df, rank_by, top_n, period):
     return result_df.sort_values("Return %", ascending=False) if not result_df.empty else result_df, summary
 
 
+@st.cache_data(ttl=12 * 3600, show_spinner=False)
+def fetch_market_valuation():
+    """Long-horizon market-valuation gauges — the inputs that actually predict multi-year
+    returns (unlike daily price action). Shiller CAPE, trailing S&P 500 P/E and dividend yield
+    from multpl.com (public); 10-yr Treasury from Yahoo (^TNX). Derives earnings yields, the
+    equity risk premium vs bonds (Fed model), and a rough CAPE-implied long-run real return.
+    All public/textbook. Cached 12h (these move slowly). Returns a dict; fields are None on
+    failure so the caller degrades gracefully."""
+    import re
+    from html import unescape
+    out = {"cape": None, "cape_mean": 17.4, "cape_median": 16.1, "pe": None, "div_yield": None,
+           "tnx": None, "earnings_yield": None, "cape_earnings_yield": None, "erp": None,
+           "implied_10y_real": None}
+
+    def scrape(path):
+        try:
+            req = urllib.request.Request(
+                f"https://www.multpl.com/{path}",
+                headers={"User-Agent": "Mozilla/5.0 quant-terminal research contact@example.com"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                text = unescape(re.sub(r"<[^>]+>", " ", r.read().decode("utf-8", "replace")))
+            m = re.search(r"Current.{0,60}?(?:Ratio|Yield)\s*:?\s*([0-9]+(?:\.[0-9]+)?)", text, re.I | re.S)
+            return float(m.group(1)) if m else None
+        except Exception:
+            return None
+
+    out["cape"] = scrape("shiller-pe")
+    out["pe"] = scrape("s-p-500-pe-ratio")
+    out["div_yield"] = scrape("s-p-500-dividend-yield")
+    try:
+        h = _yf_history("^TNX", period="5d")
+        if h is not None and not h.empty:
+            y = float(h["Close"].iloc[-1])
+            out["tnx"] = round(y / 10 if y > 20 else y, 2)   # ^TNX may be legacy-quoted x10
+    except Exception:
+        pass
+
+    if out["cape"]:
+        out["cape_earnings_yield"] = round(100.0 / out["cape"], 2)
+        out["implied_10y_real"] = out["cape_earnings_yield"]     # 1/CAPE ≈ rough real starting yield
+    if out["pe"]:
+        out["earnings_yield"] = round(100.0 / out["pe"], 2)
+    if out["earnings_yield"] is not None and out["tnx"] is not None:
+        out["erp"] = round(out["earnings_yield"] - out["tnx"], 2)
+    return out
+
+
+def long_term_market_read(val):
+    """Turn the valuation gauges into a plain-English long-horizon outlook: where the market
+    sits vs history, what that has historically implied for ~10-year returns, whether you're
+    being paid to own stocks over bonds, and long-term action guidance. Public/textbook framing
+    (Shiller / Fed-model / Buffett), NOT a market-timing signal. Returns dict or None."""
+    cape = val.get("cape")
+    if not cape:
+        return None
+    mean = val.get("cape_mean", 17.4)
+
+    if cape < 16:
+        band, tone = "Cheap", "🟢"
+        hist = "Buying at a CAPE this low has, historically, been followed by strong (often double-digit) real returns over the next decade."
+    elif cape < 22:
+        band, tone = "Reasonable", "🟢"
+        hist = "Near its long-run fair value — history suggests roughly average long-term returns from here."
+    elif cape < 28:
+        band, tone = "Above average", "🟡"
+        hist = "Somewhat expensive versus history — long-run returns from these levels have tended to run below average."
+    elif cape < 34:
+        band, tone = "Elevated", "🟡"
+        hist = "Expensive — around the high end of the last few decades. Forward 10-year real returns from here have historically been muted."
+    elif cape < 40:
+        band, tone = "Very expensive", "🔴"
+        hist = "Very expensive — in the top few percent of history. Decades that started this rich have generally delivered weak real returns."
+    else:
+        band, tone = "Extreme", "🔴"
+        hist = "Near the richest readings in 150+ years — dot-com-peak territory. From valuations this high, history says muted-to-negative real returns have typically followed over the next ~10 years."
+
+    headline = (f"The S&P 500's Shiller CAPE is ~{cape:.0f} versus a long-run average near {mean:.0f} — "
+                f"**{band.lower()}**. {hist}")
+
+    points = []
+    ey_c = val.get("cape_earnings_yield")
+    if ey_c is not None:
+        points.append(("Implied long-run return", "🟡" if ey_c < 4 else "🟢",
+                        f"The CAPE earnings yield is ~{ey_c:.1f}% — a rough starting point for long-run *real* returns before growth. That's {'thin — expectations for the next decade should be modest' if ey_c < 4 else 'reasonable'}."))
+    erp = val.get("erp")
+    ey, tnx = val.get("earnings_yield"), val.get("tnx")
+    if erp is not None:
+        if erp < 0:
+            points.append(("Stocks vs bonds (risk premium)", "🔴",
+                           f"Negative equity risk premium: the S&P's earnings yield (~{ey:.1f}%) is *below* the 10-yr Treasury (~{tnx:.1f}%). Right now you're paid less to own stocks than risk-free bonds — an unusual, cautionary setup."))
+        elif erp < 1:
+            points.append(("Stocks vs bonds (risk premium)", "🟡",
+                           f"Slim equity risk premium (~{erp:.1f} pts over the 10-yr Treasury) — little extra expected reward for taking equity risk at today's prices."))
+        else:
+            points.append(("Stocks vs bonds (risk premium)", "🟢",
+                           f"Healthy equity risk premium (~{erp:.1f} pts over the 10-yr Treasury) — stocks still out-yield bonds."))
+    points.append(("Read history honestly", "🟡",
+                   f"Compare against recent decades too, not just the {mean:.0f} long-run mean: buybacks, mega-cap software margins, and the rate regime arguably justify a higher baseline (~25–27 over the last 30 years). Even so, today sits above that."))
+
+    actions = [
+        "**Keep investing on a schedule (dollar-cost averaging).** It removes the need to call the top — trying to time it is how people actually lose.",
+        "**Tilt toward quality at a fair price** over speculative, hope-priced names — exactly what the Deep Dive is built to find.",
+        "**Keep some dry powder.** Rich valuations are when a cash reserve for future bargains earns its keep (Buffett's playbook right now).",
+        "**Lower your return expectations** for the next decade and lengthen your horizon — the math above says starting rich means slower compounding.",
+        "**Don't panic to cash waiting for a crash.** Historically, staying invested has beaten sitting out — this is context for expectations, not a sell signal.",
+    ]
+    caveats = [
+        "Valuation predicts the **long run (~10 years), not next month or next year** — expensive markets can and do keep rising for a long time.",
+        "This is a gauge for sizing expectations and behavior, **not a buy/sell trigger**.",
+    ]
+    return {"verdict": f"{band}", "tone": tone, "headline": headline,
+            "points": points, "actions": actions, "caveats": caveats}
+
+
+def render_long_term_outlook(compact=False):
+    """The long-horizon market brief: are we expensive, what history implies for the next
+    decade, and how a long-term investor should behave. Shared by the Daily Briefing and the
+    Market Command Center so both lead with the long view, not the day's noise."""
+    st.subheader("🔭 Long-Term Market Outlook")
+    st.caption("What actually predicts multi-year returns is *valuation*, not this week's headlines. This reads where the whole market sits versus history and what that has meant for the decade ahead.")
+    val = fetch_market_valuation()
+    read = long_term_market_read(val) if val else None
+    if not read:
+        st.info("Long-term valuation data is unavailable right now (source unreachable). Try again shortly — the underlying gauges update slowly, so this isn't urgent.")
+        return
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Shiller CAPE", f"{val['cape']:.1f}", f"vs ~{val['cape_mean']:.0f} avg", delta_color="off")
+    m2.metric("S&P 500 P/E", f"{val['pe']:.1f}" if val.get("pe") else "—")
+    m3.metric("10-yr Treasury", f"{val['tnx']:.1f}%" if val.get("tnx") is not None else "—")
+    m4.metric("Stocks − bonds yield", f"{val['erp']:+.1f} pts" if val.get("erp") is not None else "—",
+              "risk premium", delta_color="off")
+
+    st.markdown(f"### {read['tone']} Market valuation: {read['verdict']}")
+    st.markdown(read["headline"])
+    for label, tone, text in read["points"]:
+        with st.container(border=True):
+            st.markdown(f"{tone} **{label}**")
+            st.write(text)
+    st.markdown("**What a long-term investor should do**")
+    for a in read["actions"]:
+        st.markdown(f"- {a}")
+    for c in read["caveats"]:
+        st.caption("⚠️ " + c)
+    st.caption("Sources: Shiller CAPE / S&P P/E / dividend yield via multpl.com; 10-yr Treasury via Yahoo. Public/textbook methodology — research aid, not financial advice.")
+
 
 def market_command_center():
     st.title("Market Command Center")
-    st.caption("Market health, important news, winners, losers, and macro read.")
+    st.caption("The long-term valuation picture first, then today's market health, news, and movers.")
     if st.button("Refresh Market Command Center", type="primary"):
         st.cache_data.clear()
+
+    # Lead with the long view; the short-term health/news below is secondary context.
+    render_long_term_outlook()
+    st.divider()
+    st.subheader("Today's Market (short-term context)")
+    st.caption("Useful for awareness, but day-to-day moves say little about long-run returns — don't trade on them.")
     snapshot = get_market_snapshot()
     health, regime = get_market_health(snapshot)
     news = get_market_news(10)
@@ -3779,7 +3931,8 @@ def market_command_center():
             for _, row in df.sort_values("Change %").head(3).iterrows():
                 st.write(f"- **{row['Asset']}**: {row['Change %']}%")
     with col2:
-        st.subheader("Macro Read")
+        st.subheader("Short-Term Regime")
+        st.caption("Today's risk mood — context only, not a long-term signal.")
         st.write(f"**Regime:** {regime}")
         st.write("- **Risk-on:** SPY/QQQ up, VIX down, TLT stable or up.")
         st.write("- **Risk-off:** VIX up, SPY/QQQ down, dollar rising.")
@@ -6043,7 +6196,12 @@ STRATEGY_PRESETS = {
 
 def daily_briefing_page():
     st.title("🏠 Daily Briefing")
-    st.caption("Your one-glance start: market mood, what's moving on your watchlist, earnings ahead, and fresh opportunities.")
+    st.caption("Long-term first: where the market stands versus history and whether this is a good time to be investing — then your watchlist, ideas, and (optionally) today's mood.")
+
+    # LEAD with the long-horizon view. Investing is a long game; valuation — not today's tape —
+    # is what actually predicts the returns you'll earn over years.
+    render_long_term_outlook()
+    st.divider()
 
     # Local data first — renders instantly (no network).
     scan = load_sp500_scores()
