@@ -4465,6 +4465,33 @@ def render_market_forecast():
             st.markdown(f"- {a}")
         for c in read["caveats"]:
             st.caption("⚠️ " + c)
+
+    with st.expander("🧭 How to actually read this outlook"):
+        st.markdown(
+            "**Your time horizon changes everything.** This is a *10-year* read. If you're decades "
+            "from needing the money, you're a net *buyer* for years — so a cheap, low-return decade "
+            "isn't a threat, it's a chance to accumulate at better prices. If you're near or in "
+            "retirement (drawing down), a rich market and thin expected returns are a real risk to "
+            "manage. Same number, opposite meaning."
+        )
+        st.markdown(
+            "**It sets expectations, not timing.** A bearish long-run reading is *not* a signal to "
+            "sell and sit in cash — the backtest above shows this very machine has been too "
+            "pessimistic at high valuations before, and history says sitting out beats getting out. "
+            "Treat it as a tilt in the odds, not a prophecy."
+        )
+        st.markdown("**The disciplined playbook when the market is expensive:**")
+        st.markdown(
+            "- **Keep buying on a schedule** (dollar-cost average) instead of trying to call the top.\n"
+            "- **Lower your return expectations** for the broad index — don't extrapolate the last decade.\n"
+            "- **Be selective, not absent.** 'Expensive' is an *average*; individual businesses still "
+            "range from cheap to absurd. Use the Deep Dive / Opportunity Engine to find quality at a "
+            "fair price and skip the hype.\n"
+            "- **Keep some dry powder** so you can buy more if valuations improve.\n"
+            "- **Let time compound.** For a long horizon, showing up consistently beats being clever."
+        )
+        st.caption("Educational framing built on public/textbook research — **not personalized financial advice.** "
+                   "Your right mix depends on your goals, horizon, and risk tolerance; a licensed advisor should weigh those.")
     st.caption("Sources: FRED (yield curve, credit spreads, Sahm rule, unemployment, inflation breakeven, Fed Z.1 for investor allocation); multpl.com (CAPE, P/E, yield); Yahoo (S&P total return, 10-yr). Public/textbook methodology — research aid, not financial advice.")
 
 
