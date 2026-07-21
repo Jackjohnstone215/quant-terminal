@@ -3798,6 +3798,11 @@ def fetch_market_valuation():
     # 10-yr market-implied inflation (breakeven) — feeds the building-blocks model.
     _, infl = _fred_latest("T10YIE")
     out["inflation"] = infl
+    # Shiller's Excess CAPE Yield: CAPE earnings yield minus the real 10-yr yield — his own
+    # rate-adjusted valuation gauge (answers "is CAPE too high given low rates?").
+    _, real_y = _fred_latest("DFII10")
+    out["real_yield"] = real_y
+    out["ecy"] = round(100.0 / out["cape"] - real_y, 2) if (out["cape"] and real_y is not None) else None
     return out
 
 
@@ -4060,29 +4065,58 @@ def cape_forecast():
     return {"forecast": (slope * hist[0][1] + intercept) * 100, "r2": r2, "n": len(pairs), "cape": hist[0][1]}
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def buffett_indicator_forecast():
+    """Buffett Indicator (total corporate-equity market value ÷ GDP) regressed against realized
+    forward 10-yr S&P total returns — a fourth independent ensemble member. Equities from the Fed
+    Z.1 (same as the AIAE numerator), GDP from FRED. A weaker predictor than CAPE/allocation, so
+    it earns a lower accuracy weight. Returns {'forecast','r2','n','pct_rank'} or None."""
+    eq_ids = ["NCBEILQ027S", "FBCELLQ027S"]
+    eqs = {sid: dict(_fred_series(sid)) for sid in eq_ids}
+    gdp = dict(_fred_series("GDP"))
+    if not gdp or any(not eqs[s] for s in eq_ids):
+        return None
+    dates = sorted(set(eqs[eq_ids[0]]) & set(eqs[eq_ids[1]]) & set(gdp))
+    hist = [(d, (eqs[eq_ids[0]][d] + eqs[eq_ids[1]][d]) / gdp[d]) for d in dates if gdp[d] > 0]
+    if len(hist) < 60:
+        return None
+    pairs = _forward_return_pairs([(pd.to_datetime(d), v) for d, v in hist])
+    if len(pairs) < 20:
+        return None
+    slope, intercept, r2 = _linreg([p[1] for p in pairs], [p[2] for p in pairs])
+    vals = [v for _, v in hist]
+    pct = 100.0 * sum(1 for v in vals if v <= hist[-1][1]) / len(vals)
+    return {"forecast": (slope * hist[-1][1] + intercept) * 100, "r2": r2, "n": len(pairs), "pct_rank": pct}
+
+
 def consensus_forecast(val):
-    """Combine the long-run methods into one estimate. Forecast COMBINATION — simply averaging
-    several predictors — reliably beats any single model out-of-sample (Rapach, Strauss & Zhou
-    2010), because it cancels each model's idiosyncratic error. We average the building-blocks
-    base case, the investor-allocation regression, and the CAPE regression. Returns
-    {'consensus','low','high','real','components':[(name, nominal%, r2)], 'n','inflation'} or None."""
-    comps = []
+    """Combine the long-run methods into one estimate. Forecast COMBINATION beats any single model
+    out-of-sample (Rapach-Strauss-Zhou 2010); we go further and weight each method by its fit R²
+    (accuracy-weighting), then attach an honest ± band from the models' historical error (the CAPE
+    walk-forward MAE). Members: building-blocks base + investor-allocation, CAPE, and Buffett-
+    indicator regressions. Returns {'consensus','band','low','high','real','components','n',
+    'inflation'} or None."""
+    comps = []   # (name, forecast, weight)
     bb = building_blocks_forecast(val)
     if bb:
-        comps.append(("Building blocks (base)", bb["scenarios"][1][1], None))
-    ai = aiae_forecast()
-    if ai:
-        comps.append(("Investor-allocation regression", round(ai["forecast"], 1), round(ai["r2"], 2)))
-    cf = cape_forecast()
-    if cf:
-        comps.append(("CAPE regression", round(cf["forecast"], 1), round(cf["r2"], 2)))
+        comps.append(("Building blocks (base)", bb["scenarios"][1][1], 0.5))
+    for name, fn in [("Investor-allocation regression", aiae_forecast),
+                     ("CAPE regression", cape_forecast),
+                     ("Buffett-indicator regression", buffett_indicator_forecast)]:
+        res = fn()
+        if res:
+            comps.append((name, round(res["forecast"], 1), round(max(res["r2"], 0.05), 2)))
     if not comps:
         return None
-    vals = [c[1] for c in comps]
-    consensus = sum(vals) / len(vals)
+    wsum = sum(w for _, _, w in comps)
+    consensus = sum(v * w for _, v, w in comps) / wsum
     infl = val.get("inflation") or 2.3
-    return {"consensus": round(consensus, 1), "low": round(min(vals), 1), "high": round(max(vals), 1),
-            "real": round(consensus - infl, 1), "components": comps, "n": len(comps), "inflation": infl}
+    bt = walk_forward_backtest(_cape_pairs())
+    band = bt["mae"] if bt else 2.5
+    return {"consensus": round(consensus, 1), "band": round(band, 1),
+            "low": round(consensus - band, 1), "high": round(consensus + band, 1),
+            "real": round(consensus - infl, 1),
+            "components": comps, "n": len(comps), "inflation": infl}
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
@@ -4258,23 +4292,28 @@ def render_market_forecast():
     bb = building_blocks_forecast(val)
     ai = aiae_forecast()
     cf = cape_forecast()
+    bf = buffett_indicator_forecast()
     cons = consensus_forecast(val)
 
     st.markdown("### 📈 Long-run expected return (next ~10 years)")
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Shiller CAPE", f"{val['cape']:.1f}", f"vs ~{val['cape_mean']:.0f} avg", delta_color="off")
     if ai:
-        m2.metric("Investor equity allocation", f"{ai['aiae']:.0f}%", f"{ai['pct_rank']:.0f}th %ile of history", delta_color="off")
+        m2.metric("Investor equity allocation", f"{ai['aiae']:.0f}%", f"{ai['pct_rank']:.0f}th %ile", delta_color="off")
     m3.metric("Stocks − bonds yield", f"{val['erp']:+.1f} pts" if val.get("erp") is not None else "—", "risk premium", delta_color="off")
+    m4.metric("Excess CAPE Yield", f"{val['ecy']:+.1f}%" if val.get("ecy") is not None else "—", "Shiller, rate-adjusted", delta_color="off")
 
-    # LEAD with the combined consensus — averaging predictors beats any single one out-of-sample.
+    # LEAD with the combined consensus — accuracy-weighted averaging beats any single model.
     if cons:
         with st.container(border=True):
             st.markdown(f"## 🎯 Consensus: ~{cons['consensus']:+.1f}%/yr nominal · ~{cons['real']:+.1f}%/yr real")
-            st.markdown(f"Combined from **{cons['n']} independent methods** (range {cons['low']:+.1f}% to {cons['high']:+.1f}%/yr nominal). Averaging predictors beats any single model out-of-sample — it cancels each one's idiosyncratic error (Rapach-Strauss-Zhou 2010).")
+            st.markdown(f"**Likely range {cons['low']:+.1f}% to {cons['high']:+.1f}%/yr** (±{cons['band']:.1f} pts — the models' own historical error). Combined from **{cons['n']} methods, weighted by each one's track-record accuracy** — accuracy-weighted averaging beats any single model out-of-sample (Rapach-Strauss-Zhou 2010).")
             if cons["real"] < 1:
                 st.caption("Real (after-inflation) expected returns near zero — the arithmetic cost of buying at today's valuations.")
-        st.caption("The three methods below are the 'show your work' behind that number.")
+        st.caption("Method weights (by historical R²): " + " · ".join(
+            f"{n.replace(' regression', '').replace(' (base)', '')} {w:.2f}" for n, v, w in cons["components"]))
+    if val.get("ecy") is not None:
+        st.caption(f"↳ **Shiller Excess CAPE Yield {val['ecy']:+.1f}%** = CAPE earnings yield − real 10-yr yield ({val.get('real_yield', 0):.1f}%). His own rate-adjusted gauge: near zero/negative means expensive *even after* accounting for low rates; higher means better long-run prospects.")
 
     if bb:
         st.markdown("**Method 1 — building blocks** (dividend yield + real growth + inflation + valuation mean-reversion):")
@@ -4290,6 +4329,10 @@ def render_market_forecast():
         st.markdown("**Method 3 — CAPE regression** (valuation → forward returns, 1871–today):")
         st.markdown(f"At a CAPE of **{cf['cape']:.0f}**, the long-history fit points to **{cf['forecast']:+.1f}%/yr nominal**.")
         st.caption(f"Fit on {cf['n']} overlapping 10-yr windows, R² ≈ {cf['r2']:.2f}.")
+    if bf:
+        st.markdown("**Method 4 — Buffett Indicator regression** (total market cap ÷ GDP):")
+        st.markdown(f"At the **{bf['pct_rank']:.0f}th percentile** of history, the fit points to **{bf['forecast']:+.1f}%/yr nominal**.")
+        st.caption(f"Fit on {bf['n']} windows, R² ≈ {bf['r2']:.2f} — a weaker predictor than CAPE/allocation, so it carries a lower weight in the consensus.")
     if bb and bb["inputs"].get("fair_cape"):
         st.caption(f"↳ The base case now reverts toward a **rate-aware fair-value CAPE of ~{bb['inputs']['fair_cape']:.0f}** (from regressing CAPE on the 10-yr yield), not a fixed 1900s mean — low rates justify a higher fair value.")
 
