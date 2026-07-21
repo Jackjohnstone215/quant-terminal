@@ -3879,9 +3879,10 @@ def render_long_term_outlook(compact=False):
     Market Command Center so both lead with the long view, not the day's noise."""
     st.subheader("🔭 Long-Term Market Outlook")
     st.caption("What actually predicts multi-year returns is *valuation*, not this week's headlines. This reads where the whole market sits versus history and what that has meant for the decade ahead.")
-    val = fetch_market_valuation()
-    read = long_term_market_read(val) if val else None
-    if not read:
+    data = _forecast_data()
+    val = data.get("val")
+    read = data.get("read")
+    if not read or not val:
         st.info("Long-term valuation data is unavailable right now (source unreachable). Try again shortly — the underlying gauges update slowly, so this isn't urgent.")
         return
 
@@ -3894,7 +3895,7 @@ def render_long_term_outlook(compact=False):
 
     # One-line consensus punchline for the glance page (full model breakdown lives in Market
     # Command Center → Market Forecast).
-    cons = consensus_forecast(val)
+    cons = data.get("cons")
     if cons:
         st.markdown(f"#### 🧭 10-year outlook: **~{cons['consensus']:+.1f}%/yr nominal · ~{cons['real']:+.1f}%/yr real**")
         st.caption(f"Consensus of {cons['n']} models (range {cons['low']:+.1f}% to {cons['high']:+.1f}%/yr). Full breakdown in **Market Command Center → Market Forecast**.")
@@ -4330,22 +4331,75 @@ def recession_dashboard():
     return {"signals": sigs, "risk": risk, "reds": reds, "yellows": yellows}
 
 
+FORECAST_CACHE_FILE = APP_DIR / "forecast_cache.json"
+FORECAST_CACHE_MAX_AGE_DAYS = 10
+
+
+def _compute_forecast_bundle():
+    """Compute the ENTIRE market-forecast payload once (all the slow network + regressions). Used
+    live as a fallback and by build_forecast_cache.py to precompute a committed JSON, so the app
+    serves the forecast instantly on cold starts. Returns a JSON-serializable dict or None."""
+    val = fetch_market_valuation()
+    if not val or not val.get("cape"):
+        return None
+    return {
+        "val": val,
+        "bb": building_blocks_forecast(val),
+        "ai": aiae_forecast(),
+        "cf": cape_forecast(),
+        "bf": buffett_indicator_forecast(),
+        "cons": consensus_forecast(val),
+        "read": long_term_market_read(val),
+        "rec": recession_dashboard(),
+        "cbt": consensus_backtest(),
+        "bt_cape": walk_forward_backtest(_cape_pairs()),
+        "bt_aiae": walk_forward_backtest(_aiae_pairs()),
+    }
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_forecast_bundle():
+    """Read the precomputed forecast (committed daily by the scan Action) so cold starts are
+    instant. Returns None if missing, unreadable, or stale beyond the max age — the caller then
+    falls back to a live compute."""
+    try:
+        if not FORECAST_CACHE_FILE.exists():
+            return None
+        with open(FORECAST_CACHE_FILE, "r", encoding="utf-8") as f:
+            b = json.load(f)
+        gen = b.get("generated")
+        if gen:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(gen.replace("Z", "+00:00"))).days
+            if age > FORECAST_CACHE_MAX_AGE_DAYS:
+                return None
+        for key in ("cbt", "bt_cape", "bt_aiae"):     # revive datetimes in backtest points
+            bt = b.get(key)
+            if bt and bt.get("points"):
+                bt["points"] = [[pd.to_datetime(p[0]), p[1], p[2]] for p in bt["points"]]
+        return b
+    except Exception:
+        return None
+
+
+def _forecast_data():
+    """Forecast payload — from the committed cache (instant) when fresh, else computed live."""
+    return load_forecast_bundle() or _compute_forecast_bundle() or {}
+
+
 def render_market_forecast():
     """Deep, two-horizon market forecast: a triangulated long-run expected-return estimate
     (building-blocks + AIAE regression) and a near-term recession/regime dashboard, synthesized
     into a bottom line. All public/textbook methodology — probabilistic ranges, not predictions."""
     st.subheader("🔭 Market Forecast — estimating the decade ahead")
     st.caption("What we know *now* that hints at the *future*. Long-run returns are driven by valuation and investor positioning; near-term risk by the cycle. This separates the two — and shows its work.")
-    val = fetch_market_valuation()
+    data = _forecast_data()
+    val = data.get("val")
     if not val or not val.get("cape"):
         st.info("Forecast data is temporarily unavailable (sources unreachable). The underlying series update slowly — try again shortly.")
         return
-
-    bb = building_blocks_forecast(val)
-    ai = aiae_forecast()
-    cf = cape_forecast()
-    bf = buffett_indicator_forecast()
-    cons = consensus_forecast(val)
+    bb, ai, cf, bf, cons = data.get("bb"), data.get("ai"), data.get("cf"), data.get("bf"), data.get("cons")
+    if data.get("generated"):
+        st.caption(f"Forecast refreshed {data['generated'][:10]} (updates daily; the underlying gauges move slowly).")
 
     st.markdown("### 📈 Long-run expected return (next ~10 years)")
     m1, m2, m3, m4 = st.columns(4)
@@ -4391,7 +4445,7 @@ def render_market_forecast():
     with st.expander("📉 Track record — has this actually worked? (walk-forward backtest)"):
         st.caption("The honest test: at each past date we re-fit the model using ONLY the data available *then* (no hindsight), forecast the next 10 years, and compare to what actually happened. This is out-of-sample — the real measure of whether a metric predicts.")
 
-        cbt = consensus_backtest()
+        cbt = data.get("cbt")
         if cbt:
             cpts = cbt["points"]
             st.markdown(f"**🎯 The full machine (accuracy-weighted consensus)** — {cbt['n']} quarterly forecasts, {cpts[0][0].year}–{cpts[-1][0].year}:")
@@ -4409,8 +4463,7 @@ def render_market_forecast():
             st.divider()
             st.caption("The individual methods:")
 
-        for label, pairs in [("CAPE model", _cape_pairs()), ("Investor-allocation model", _aiae_pairs())]:
-            bt = walk_forward_backtest(pairs) if pairs else None
+        for label, bt in [("CAPE model", data.get("bt_cape")), ("Investor-allocation model", data.get("bt_aiae"))]:
             if not bt:
                 continue
             pts = bt["points"]
@@ -4436,7 +4489,7 @@ def render_market_forecast():
 
     st.divider()
     st.markdown("### ⚠️ Near-term recession & regime risk (6–18 months)")
-    rec = recession_dashboard()
+    rec = data.get("rec")
     if not rec:
         st.info("Recession-signal data unavailable right now.")
     else:
@@ -4449,7 +4502,7 @@ def render_market_forecast():
 
     st.divider()
     st.markdown("### 🧭 Bottom line")
-    read = long_term_market_read(val)
+    read = data.get("read")
     if read and rec:
         cons_bit = (f"the consensus of the models points to **~{cons['consensus']:+.1f}%/yr nominal (~{cons['real']:+.1f}%/yr real)** over the decade"
                     if cons else "the return models point to thin real returns over the decade")

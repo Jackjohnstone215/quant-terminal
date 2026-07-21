@@ -34,14 +34,19 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Commit updated scores
+      - name: Precompute market forecast cache
+        run: python build_forecast_cache.py
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      - name: Commit updated data
         run: |
           git config user.name "quant-scan-bot"
           git config user.email "actions@github.com"
-          git add sp500_quant_scores.csv sp500_quant_score_history.csv
+          git add sp500_quant_scores.csv sp500_quant_score_history.csv forecast_cache.json
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Automated quant scan ($(date -u +%Y-%m-%d))"
+            git commit -m "Automated data refresh ($(date -u +%Y-%m-%d))"
             git push
           fi
