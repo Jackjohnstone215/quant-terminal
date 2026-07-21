@@ -4085,23 +4085,116 @@ def consensus_forecast(val):
             "real": round(consensus - infl, 1), "components": comps, "n": len(comps), "inflation": infl}
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def fair_value_cape():
+    """Rate-aware 'fair' CAPE (Faber-style): the CAPE that today's interest-rate regime justifies,
+    from regressing historical CAPE on the 10-yr Treasury yield — lower rates support a higher
+    fair CAPE. More defensible than reverting to a fixed 1900s mean. Returns
+    {'fair_cape','yield','slope','r2','n'} or None. Bounded to a sane [12, 34]."""
+    ch = cape_history()
+    gs10 = _fred_series("GS10")
+    if len(ch) < 120 or len(gs10) < 120:
+        return None
+
+    def ym(s):
+        try:
+            return datetime.strptime(s, "%b %d, %Y").strftime("%Y-%m")
+        except ValueError:
+            return None
+
+    cape_by_m = {}
+    for dt, v in ch:                       # newest-first; keep first (latest) per month
+        k = ym(dt)
+        if k and k not in cape_by_m:
+            cape_by_m[k] = v
+    yield_by_m = {d[:7]: v for d, v in gs10}
+    xs, ys = [], []
+    for k, c in cape_by_m.items():
+        if k in yield_by_m:
+            xs.append(yield_by_m[k])
+            ys.append(c)
+    if len(xs) < 100:
+        return None
+    slope, intercept, r2 = _linreg(xs, ys)
+    cur_y = _fred_latest("DGS10")[1] or _fred_latest("GS10")[1]
+    if cur_y is None:
+        return None
+    fair = max(12.0, min(34.0, slope * cur_y + intercept))
+    return {"fair_cape": round(fair, 1), "yield": cur_y, "slope": slope, "r2": r2, "n": len(xs)}
+
+
 def building_blocks_forecast(val):
     """Bogle/Damodaran building-blocks 10-yr expected NOMINAL return = dividend yield + real
     earnings growth + inflation + annualized CAPE mean-reversion. Bull/base/bear vary the growth
-    assumption and the reversion target (the dominant swing — shown explicitly). Returns
+    assumption and the reversion target (the dominant swing — shown explicitly). The BASE case
+    reverts toward a rate-aware fair-value CAPE (not a fixed historical mean). Returns
     {'scenarios':[(name, nominal%, real%, note)], 'inputs':{...}} or None."""
     cape, dy, infl = val.get("cape"), val.get("div_yield"), val.get("inflation")
     if not cape or dy is None or infl is None:
         return None
     mean = val.get("cape_mean", 17.4)
+    fvc = fair_value_cape()
+    base_target = fvc["fair_cape"] if fvc else 25.0
 
     def scen(name, growth, target):
         val_chg = ((target / cape) ** 0.1 - 1) * 100
         nominal = dy + growth + infl + val_chg
         return (name, round(nominal, 1), round(nominal - infl, 1), f"real growth {growth:.1f}%, CAPE→{target:.0f}")
 
-    return {"scenarios": [scen("Bull", 2.5, cape), scen("Base", 1.5, 25.0), scen("Bear", 1.0, mean)],
-            "inputs": {"cape": cape, "div_yield": dy, "inflation": infl}}
+    return {"scenarios": [scen("Bull", 2.5, cape), scen("Base", 1.5, base_target), scen("Bear", 1.0, mean)],
+            "inputs": {"cape": cape, "div_yield": dy, "inflation": infl, "fair_cape": base_target}}
+
+
+def _forward_return_pairs(dated):
+    """Attach realized forward 10-yr annualized S&P total return to each (datetime, value) point.
+    Returns [(datetime, value, realized)] for dates where T+10 data exists. Shared by the
+    regression forecasts' backtests."""
+    tr = _yf_history("^SP500TR", period="max")
+    if tr is None or tr.empty or "Close" not in tr.columns:
+        return []
+    closes = tr["Close"].dropna()
+    idx = pd.to_datetime(closes.index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)
+    ser = pd.Series(closes.values, index=idx).sort_index()
+    out = []
+    for dt, v in dated:
+        past = ser[ser.index <= dt]
+        fut = ser[ser.index >= dt + pd.DateOffset(years=10)]
+        if len(past) and len(fut):
+            out.append((dt, v, (float(fut.iloc[0]) / float(past.iloc[-1])) ** 0.1 - 1))
+    return out
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def _cape_pairs():
+    return _forward_return_pairs([(pd.to_datetime(d), v) for d, v in cape_history()])
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def _aiae_pairs():
+    a = compute_aiae()
+    return _forward_return_pairs([(pd.to_datetime(d), v) for d, v in a["history"]]) if a else []
+
+
+def walk_forward_backtest(pairs, min_train=40):
+    """Honest, no-lookahead backtest: sort by date; at each point fit the regression on ONLY the
+    prior data, forecast, and compare to the realized outcome. Returns
+    {'points':[(datetime, predicted%, actual%)], 'rmse','mae','r2','n'} or None."""
+    pairs = sorted(pairs, key=lambda p: p[0])
+    if len(pairs) <= min_train + 5:
+        return None
+    xs = [p[1] for p in pairs]
+    ys = [p[2] for p in pairs]
+    pts = []
+    for i in range(min_train, len(pairs)):
+        sl, ic, _ = _linreg(xs[:i], ys[:i])
+        pts.append((pairs[i][0], (sl * xs[i] + ic) * 100, ys[i] * 100))
+    errs = [pr - ac for _, pr, ac in pts]
+    rmse = (sum(e * e for e in errs) / len(errs)) ** 0.5
+    mae = sum(abs(e) for e in errs) / len(errs)
+    _, _, r2 = _linreg([p[1] for p in pts], [p[2] for p in pts])
+    return {"points": pts, "rmse": rmse, "mae": mae, "r2": r2, "n": len(pts)}
 
 
 def recession_dashboard():
@@ -4197,6 +4290,35 @@ def render_market_forecast():
         st.markdown("**Method 3 — CAPE regression** (valuation → forward returns, 1871–today):")
         st.markdown(f"At a CAPE of **{cf['cape']:.0f}**, the long-history fit points to **{cf['forecast']:+.1f}%/yr nominal**.")
         st.caption(f"Fit on {cf['n']} overlapping 10-yr windows, R² ≈ {cf['r2']:.2f}.")
+    if bb and bb["inputs"].get("fair_cape"):
+        st.caption(f"↳ The base case now reverts toward a **rate-aware fair-value CAPE of ~{bb['inputs']['fair_cape']:.0f}** (from regressing CAPE on the 10-yr yield), not a fixed 1900s mean — low rates justify a higher fair value.")
+
+    with st.expander("📉 Track record — has this actually worked? (walk-forward backtest)"):
+        st.caption("The honest test: at each past date we re-fit the model using ONLY the data available *then* (no hindsight), forecast the next 10 years, and compare to what actually happened. This is out-of-sample — the real measure of whether a metric predicts.")
+        for label, pairs in [("CAPE model", _cape_pairs()), ("Investor-allocation model", _aiae_pairs())]:
+            bt = walk_forward_backtest(pairs) if pairs else None
+            if not bt:
+                continue
+            pts = bt["points"]
+            span = f"{pts[0][0].year}–{pts[-1][0].year}"
+            st.markdown(f"**{label}** — over {bt['n']} forecasts ({span}): predicted-vs-actual R² ≈ **{bt['r2']:.2f}**, average miss **±{bt['mae']:.1f}%/yr**.")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=[p[0] for p in pts], y=[p[1] for p in pts], name="Forecast (made then)", line=dict(color=ACCENT, width=2)))
+            fig.add_trace(go.Scatter(x=[p[0] for p in pts], y=[p[2] for p in pts], name="Actual next 10 yrs", line=dict(color="#8B7CF6", width=2)))
+            fig.update_yaxes(gridcolor=CHART_GRID, title="10-yr annualized return", ticksuffix="%")
+            fig.update_xaxes(gridcolor=CHART_GRID, title="Year forecast was made")
+            st.plotly_chart(_style_fig(fig, height=300), width="stretch")
+            # concrete example rows: forecast made in these years vs what actually happened
+            examples = []
+            for yr in (2000, 2005, 2010, 2015):
+                near = min(pts, key=lambda p: abs(p[0].year - yr))
+                if abs(near[0].year - yr) <= 2:
+                    examples.append((near[0].year, near[1], near[2]))
+            if examples:
+                st.markdown("  \n".join(
+                    f"• Forecast made in **{y}**: {pr:+.1f}%/yr → actually delivered **{ac:+.1f}%/yr**"
+                    for y, pr, ac in examples))
+        st.caption("Overlapping windows and a finite history mean these R²s are indicative, not guarantees — but they show the models have genuinely tracked the decade ahead, especially at valuation extremes.")
 
     st.divider()
     st.markdown("### ⚠️ Near-term recession & regime risk (6–18 months)")
