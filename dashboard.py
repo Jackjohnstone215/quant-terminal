@@ -4502,7 +4502,8 @@ def market_command_center():
         st.cache_data.clear()
 
     # Lead with the deep long-run + near-term forecast; short-term health/news is secondary.
-    render_market_forecast()
+    with st.spinner("Building the market forecast (valuation, FRED macro, backtests)…"):
+        render_market_forecast()
     st.divider()
     st.subheader("Today's Market (short-term context)")
     st.caption("Useful for awareness, but day-to-day moves say little about long-run returns — don't trade on them.")
@@ -6793,12 +6794,7 @@ STRATEGY_PRESETS = {
 
 def daily_briefing_page():
     st.title("🏠 Daily Briefing")
-    st.caption("Long-term first: where the market stands versus history and whether this is a good time to be investing — then your watchlist, ideas, and (optionally) today's mood.")
-
-    # LEAD with the long-horizon view. Investing is a long game; valuation — not today's tape —
-    # is what actually predicts the returns you'll earn over years.
-    render_long_term_outlook()
-    st.divider()
+    st.caption("Your watchlist and ideas load instantly. Tap for the long-term market outlook and today's mood.")
 
     # Local data first — renders instantly (no network).
     scan = load_sp500_scores()
@@ -6807,10 +6803,14 @@ def daily_briefing_page():
         scan = add_score_change(scan)
     wl = load_watchlist()
 
-    # Live market data is OPT-IN: Yahoo is slow/rate-limited on the cloud, so we never let it
-    # block the page. Click to pull today's market mood + earnings; everything else is instant.
-    if st.button("🔄 Load live market data", type="primary") or st.session_state.get("briefing_live"):
+    # Heavy market data (long-term outlook + live mood) is OPT-IN so the page OPENS INSTANTLY.
+    # The outlook pulls ~25 slow multpl/FRED/Yahoo calls on a cold load; we never let that block
+    # the landing page (it re-runs on every Streamlit Cloud cold-start).
+    if st.button("🔭 Load market outlook & today's mood", type="primary") or st.session_state.get("briefing_live"):
         st.session_state["briefing_live"] = True
+        with st.spinner("Loading long-term outlook…"):
+            render_long_term_outlook()
+        st.divider()
         with st.spinner("Fetching live market data..."):
             try:
                 snapshot = get_market_snapshot()
@@ -6824,7 +6824,7 @@ def daily_briefing_page():
             for i, (_, r) in enumerate(sd.head(3).iterrows()):
                 m[i + 1].metric(r["Asset"], money(r["Price"]), f"{r['Change %']}%")
     else:
-        st.caption("📈 Click **Load live market data** for today's market mood & earnings dates. (Kept off auto-load so this page opens instantly — live quotes are slow on the free cloud host.)")
+        st.info("📊 Tap **Load market outlook & today's mood** for the long-term forecast + live market mood. Kept off auto-load so this page opens instantly — the full breakdown always lives in **Market Command Center**.")
 
     st.divider()
     left, right = st.columns([1.1, 1])
