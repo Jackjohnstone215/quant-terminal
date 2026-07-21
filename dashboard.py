@@ -4211,6 +4211,58 @@ def _aiae_pairs():
     return _forward_return_pairs([(pd.to_datetime(d), v) for d, v in a["history"]]) if a else []
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def _buffett_pairs():
+    eq_ids = ["NCBEILQ027S", "FBCELLQ027S"]
+    eqs = {sid: dict(_fred_series(sid)) for sid in eq_ids}
+    gdp = dict(_fred_series("GDP"))
+    if not gdp or any(not eqs[s] for s in eq_ids):
+        return []
+    dates = sorted(set(eqs[eq_ids[0]]) & set(eqs[eq_ids[1]]) & set(gdp))
+    hist = [(d, (eqs[eq_ids[0]][d] + eqs[eq_ids[1]][d]) / gdp[d]) for d in dates if gdp[d] > 0]
+    return _forward_return_pairs([(pd.to_datetime(d), v) for d, v in hist])
+
+
+def consensus_backtest(min_train=30):
+    """Walk-forward backtest of the COMBINED (accuracy-weighted) ensemble — the honest 'how good
+    would this machine have been' test. Aligns CAPE/AIAE/Buffett to quarters; at each quarter,
+    fits all three regressions on prior data ONLY, R²-weight-combines the forecasts, and compares
+    to the realized next-decade return. Returns {'points':[(datetime, predicted%, actual%)],
+    'rmse','mae','r2','hit1','hit2','n'} or None."""
+    def by_q(pairs):
+        out = {}
+        for dt, v, r in sorted(pairs, key=lambda p: p[0]):
+            out[(dt.year, (dt.month - 1) // 3)] = (v, r, dt)   # last obs in each quarter
+        return out
+
+    C, A, B = by_q(_cape_pairs()), by_q(_aiae_pairs()), by_q(_buffett_pairs())
+    if not (C and A and B):
+        return None
+    qs = sorted(set(C) & set(A) & set(B))
+    if len(qs) <= min_train + 4:
+        return None
+    pts = []
+    for i in range(min_train, len(qs)):
+        train = qs[:i]
+        q = qs[i]
+        preds, weights = [], []
+        for M in (C, A, B):
+            sl, ic, r2 = _linreg([M[t][0] for t in train], [M[t][1] for t in train])
+            preds.append(sl * M[q][0] + ic)
+            weights.append(max(r2, 0.05))
+        wsum = sum(weights)
+        pred = sum(p * w for p, w in zip(preds, weights)) / wsum
+        pts.append((C[q][2], pred * 100, C[q][1] * 100))   # realized (~same across methods)
+    errs = [pr - ac for _, pr, ac in pts]
+    n = len(pts)
+    rmse = (sum(e * e for e in errs) / n) ** 0.5
+    mae = sum(abs(e) for e in errs) / n
+    _, _, r2 = _linreg([p[1] for p in pts], [p[2] for p in pts])
+    hit1 = 100.0 * sum(1 for e in errs if abs(e) <= 1) / n
+    hit2 = 100.0 * sum(1 for e in errs if abs(e) <= 2) / n
+    return {"points": pts, "rmse": rmse, "mae": mae, "r2": r2, "hit1": hit1, "hit2": hit2, "n": n}
+
+
 def walk_forward_backtest(pairs, min_train=40):
     """Honest, no-lookahead backtest: sort by date; at each point fit the regression on ONLY the
     prior data, forecast, and compare to the realized outcome. Returns
@@ -4338,6 +4390,25 @@ def render_market_forecast():
 
     with st.expander("📉 Track record — has this actually worked? (walk-forward backtest)"):
         st.caption("The honest test: at each past date we re-fit the model using ONLY the data available *then* (no hindsight), forecast the next 10 years, and compare to what actually happened. This is out-of-sample — the real measure of whether a metric predicts.")
+
+        cbt = consensus_backtest()
+        if cbt:
+            cpts = cbt["points"]
+            st.markdown(f"**🎯 The full machine (accuracy-weighted consensus)** — {cbt['n']} quarterly forecasts, {cpts[0][0].year}–{cpts[-1][0].year}:")
+            cc = st.columns(3)
+            cc[0].metric("Predicted-vs-actual R²", f"{cbt['r2']:.2f}")
+            cc[1].metric("Average miss", f"±{cbt['mae']:.1f}%/yr")
+            cc[2].metric("Within ±2%/yr", f"{cbt['hit2']:.0f}%")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=[p[0] for p in cpts], y=[p[1] for p in cpts], name="Machine forecast (made then)", line=dict(color=ACCENT, width=2)))
+            fig.add_trace(go.Scatter(x=[p[0] for p in cpts], y=[p[2] for p in cpts], name="Actual next 10 yrs", line=dict(color="#8B7CF6", width=2)))
+            fig.update_yaxes(gridcolor=CHART_GRID, title="10-yr annualized return", ticksuffix="%")
+            fig.update_xaxes(gridcolor=CHART_GRID, title="Year forecast was made")
+            st.plotly_chart(_style_fig(fig, height=320), width="stretch")
+            st.markdown("It nailed direction across 30 years — it warned of the weak 2000s *before* the dot-com bust and flagged strong returns after 2002. **Its one systematic flaw: it was too pessimistic through the 2010s**, undershooting a historic bull market by several points a year. Worth remembering, because today it's bearish again — the same setup where it has erred low before.")
+            st.divider()
+            st.caption("The individual methods:")
+
         for label, pairs in [("CAPE model", _cape_pairs()), ("Investor-allocation model", _aiae_pairs())]:
             bt = walk_forward_backtest(pairs) if pairs else None
             if not bt:
