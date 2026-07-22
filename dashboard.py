@@ -2662,6 +2662,17 @@ def fetch_fmp_fundamentals(ticker):
     ebitda_margin = safe_float(ratios.get("ebitdaMarginTTM"))
     dte = safe_float(ratios.get("debtToEquityRatioTTM"))
 
+    ev = safe_float(ratios.get("enterpriseValueTTM")) or safe_float(km.get("enterpriseValueTTM"))
+    total_cash_val = per_share_to_total("cashPerShareTTM")
+    # Total debt: back it out of enterprise value (EV = market cap + total debt − cash), which
+    # captures ALL debt including operating leases. The per-share interest-debt figure undercounts
+    # it — that's what flipped net-debt/EBITDA signs and understated leverage. Fall back to the
+    # per-share figure only when EV isn't available.
+    if ev is not None and mktcap is not None and total_cash_val is not None:
+        total_debt_val = max(ev - mktcap + total_cash_val, 0.0)
+    else:
+        total_debt_val = per_share_to_total("interestDebtPerShareTTM")
+
     info = {
         "shortName": profile.get("companyName") or ticker,
         "sector": profile.get("sector") or "Unknown",
@@ -2669,7 +2680,7 @@ def fetch_fmp_fundamentals(ticker):
         "currentPrice": price,
         "regularMarketPrice": price,
         "marketCap": mktcap,
-        "enterpriseValue": safe_float(ratios.get("enterpriseValueTTM")) or safe_float(km.get("enterpriseValueTTM")),
+        "enterpriseValue": ev,
         "trailingPE": safe_float(ratios.get("priceToEarningsRatioTTM")),
         "forwardPE": None,  # not on FMP free; scoring degrades gracefully
         "trailingPegRatio": safe_float(ratios.get("priceToEarningsGrowthRatioTTM")),
@@ -2692,8 +2703,8 @@ def fetch_fmp_fundamentals(ticker):
         "totalRevenue": total_revenue,
         "freeCashflow": per_share_to_total("freeCashFlowPerShareTTM"),
         "operatingCashflow": per_share_to_total("operatingCashFlowPerShareTTM"),
-        "totalCash": per_share_to_total("cashPerShareTTM"),
-        "totalDebt": per_share_to_total("interestDebtPerShareTTM"),
+        "totalCash": total_cash_val,
+        "totalDebt": total_debt_val,
         "ebitda": (ebitda_margin * total_revenue) if (ebitda_margin is not None and total_revenue) else None,
         "revenueGrowth": safe_float(growth.get("revenueGrowth")),
         "earningsGrowth": safe_float(growth.get("netIncomeGrowth")),
