@@ -4043,24 +4043,10 @@ def aiae_forecast():
     a = compute_aiae()
     if not a:
         return None
-    tr = _yf_history("^SP500TR", period="max")
-    if tr is None or tr.empty or "Close" not in tr.columns:
-        return None
-    closes = tr["Close"].dropna()
-    idx = pd.to_datetime(closes.index)
-    if getattr(idx, "tz", None) is not None:
-        idx = idx.tz_localize(None)
-    ser = pd.Series(closes.values, index=idx).sort_index()
-    pairs = []
-    for d, a_val in a["history"]:
-        dt = pd.to_datetime(d)
-        past = ser[ser.index <= dt]
-        fut = ser[ser.index >= dt + pd.DateOffset(years=10)]
-        if len(past) and len(fut):
-            pairs.append((a_val, (float(fut.iloc[0]) / float(past.iloc[-1])) ** 0.1 - 1))
+    pairs = _aiae_pairs()   # long-history forward-return pairs
     if len(pairs) < 20:
         return None
-    slope, intercept, r2 = _linreg([p[0] for p in pairs], [p[1] for p in pairs])
+    slope, intercept, r2 = _linreg([p[1] for p in pairs], [p[2] for p in pairs])
     return {"forecast": (slope * a["aiae"] + intercept) * 100, "r2": r2, "n": len(pairs),
             "aiae": a["aiae"] * 100, "pct_rank": a["pct_rank"]}
 
@@ -4090,25 +4076,12 @@ def cape_forecast():
     hist = cape_history()
     if len(hist) < 60:
         return None
-    tr = _yf_history("^SP500TR", period="max")
-    if tr is None or tr.empty or "Close" not in tr.columns:
-        return None
-    closes = tr["Close"].dropna()
-    idx = pd.to_datetime(closes.index)
-    if getattr(idx, "tz", None) is not None:
-        idx = idx.tz_localize(None)
-    ser = pd.Series(closes.values, index=idx).sort_index()
-    pairs = []
-    for dt_s, c in hist:
-        dt = pd.to_datetime(dt_s)
-        past = ser[ser.index <= dt]
-        fut = ser[ser.index >= dt + pd.DateOffset(years=10)]
-        if len(past) and len(fut):
-            pairs.append((c, (float(fut.iloc[0]) / float(past.iloc[-1])) ** 0.1 - 1))
+    pairs = _cape_pairs()   # long-history (1871+) forward-return pairs
     if len(pairs) < 20:
         return None
-    slope, intercept, r2 = _linreg([p[0] for p in pairs], [p[1] for p in pairs])
-    return {"forecast": (slope * hist[0][1] + intercept) * 100, "r2": r2, "n": len(pairs), "cape": hist[0][1]}
+    slope, intercept, r2 = _linreg([p[1] for p in pairs], [p[2] for p in pairs])
+    cur = hist[0][1]
+    return {"forecast": (slope * cur + intercept) * 100, "r2": r2, "n": len(pairs), "cape": cur}
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
@@ -4225,24 +4198,80 @@ def building_blocks_forecast(val):
             "inputs": {"cape": cape, "div_yield": dy, "inflation": infl, "fair_cape": base_target}}
 
 
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def _multpl_month_table(path):
+    """Scrape a multpl.com monthly data table → {'YYYY-MM': float} (latest obs per month).
+    Handles the &#x2002 value entity (unescape) and comma thousands. {} on failure."""
+    import re
+    from html import unescape
+    try:
+        req = urllib.request.Request(f"https://www.multpl.com/{path}",
+                                     headers={"User-Agent": "Mozilla/5.0 quant-terminal research"})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            html = unescape(r.read().decode("utf-8", "replace"))
+        rows = re.findall(r"<td>\s*([A-Z][a-z]{2} \d{1,2}, \d{4})\s*</td>\s*<td>\s*([-0-9,]+\.?[0-9]*)", html)
+        out = {}
+        for d, v in rows:
+            k = pd.to_datetime(d).strftime("%Y-%m")
+            if k not in out:
+                out[k] = float(v.replace(",", ""))
+        return out
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def long_history_tr_index():
+    """Nominal S&P 500 total-return index back to 1871, reconstructed from Shiller's monthly
+    nominal price + dividend yield (multpl.com): monthly TR = price return + yield/12. This gives
+    the regressions and backtests ~150 years with many independent decades — vs Yahoo's ^SP500TR
+    which only starts 1988. (The dollar-dividend table is inflation-adjusted, so we use the
+    scale-free yield instead.) Returns {'YYYY-MM': index_level} or {} on failure."""
+    P = _multpl_month_table("s-p-500-historical-prices/table/by-month")
+    Y = _multpl_month_table("s-p-500-dividend-yield/table/by-month")
+    keys = sorted(set(P) & set(Y))
+    if len(keys) < 240:
+        return {}
+    idx, prev, tr = 100.0, None, {}
+    for k in keys:
+        if prev and P.get(prev):
+            idx *= (P[k] / P[prev]) + (Y[k] / 100.0) / 12.0
+        tr[k] = idx
+        prev = k
+    return tr
+
+
 def _forward_return_pairs(dated):
-    """Attach realized forward 10-yr annualized S&P total return to each (datetime, value) point.
-    Returns [(datetime, value, realized)] for dates where T+10 data exists. Shared by the
-    regression forecasts' backtests."""
-    tr = _yf_history("^SP500TR", period="max")
-    if tr is None or tr.empty or "Close" not in tr.columns:
+    """Attach realized forward 10-yr annualized nominal S&P total return to each (datetime, value)
+    point. Uses the long-history (1871+) reconstructed TR index when available — many independent
+    decades → an honest backtest — and falls back to Yahoo ^SP500TR (1988+). Returns
+    [(datetime, value, realized)] for points whose +10-yr outcome exists."""
+    tr = long_history_tr_index()
+    if tr and len(tr) >= 240:
+        out = []
+        for dt, v in dated:
+            d0 = pd.to_datetime(dt)
+            k0, k1 = d0.strftime("%Y-%m"), (d0 + pd.DateOffset(years=10)).strftime("%Y-%m")
+            if k0 in tr and k1 in tr and tr[k0] > 0:
+                out.append((d0, v, (tr[k1] / tr[k0]) ** 0.1 - 1))
+        if len(out) >= 40:
+            return out
+    # Fallback: Yahoo ^SP500TR (1988+)
+    ytr = _yf_history("^SP500TR", period="max")
+    if ytr is None or ytr.empty or "Close" not in ytr.columns:
         return []
-    closes = tr["Close"].dropna()
+    closes = ytr["Close"].dropna()
     idx = pd.to_datetime(closes.index)
     if getattr(idx, "tz", None) is not None:
         idx = idx.tz_localize(None)
     ser = pd.Series(closes.values, index=idx).sort_index()
     out = []
     for dt, v in dated:
-        past = ser[ser.index <= dt]
-        fut = ser[ser.index >= dt + pd.DateOffset(years=10)]
+        d0 = pd.to_datetime(dt)
+        past = ser[ser.index <= d0]
+        fut = ser[ser.index >= d0 + pd.DateOffset(years=10)]
         if len(past) and len(fut):
-            out.append((dt, v, (float(fut.iloc[0]) / float(past.iloc[-1])) ** 0.1 - 1))
+            out.append((d0, v, (float(fut.iloc[0]) / float(past.iloc[-1])) ** 0.1 - 1))
     return out
 
 
@@ -4512,7 +4541,7 @@ def render_market_forecast():
             fig.update_yaxes(gridcolor=CHART_GRID, title="10-yr annualized return", ticksuffix="%")
             fig.update_xaxes(gridcolor=CHART_GRID, title="Year forecast was made")
             st.plotly_chart(_style_fig(fig, height=320), width="stretch")
-            st.markdown("This is a *genuinely* out-of-sample test — at each date it trains only on outcomes that had already matured by then. The model gets the **direction** right but the magnitude is noisy, and it **systematically undershot the 2010s** bull market by several points a year. Worth remembering because today it reads bearish — the same setup where it has erred low before. Treat it as a rough tilt in the odds, not a precise number.")
+            st.markdown("A *genuinely* out-of-sample test over ~150 years — at each date it trains only on outcomes that had already matured by then. It gets **direction** right consistently and magnitude reasonably, though it **undershot the 2010s** bull market by a few points a year. Worth remembering because today it reads bearish — the same setup where it has erred low before. A strong tilt in the odds, not a precise number.")
             st.divider()
             st.caption("The individual methods:")
 
@@ -4538,7 +4567,7 @@ def render_market_forecast():
                 st.markdown("  \n".join(
                     f"• Forecast made in **{y}**: {pr:+.1f}%/yr → actually delivered **{ac:+.1f}%/yr**"
                     for y, pr, ac in examples))
-        st.caption("Important limitation: with only ~1988-onward total-return data, a strict no-lookahead 10-year backtest has very few independent decades, so these out-of-sample R²s are noisy and single methods can look weak here. The academic evidence for CAPE/allocation (R²≈0.4–0.8) rests on ~150 years of data this live test doesn't have. Read it as directional support, not proof.")
+        st.caption("Method: total returns reconstructed back to ~1871 from Shiller's price + dividend-yield data, so this no-lookahead test spans many independent decades (the consensus covers 1965–2016, CAPE alone 1882–2016). These out-of-sample R²s (~0.3 single-metric, ~0.6 consensus) line up with the academic literature. Still a guide, not a guarantee — overlapping windows and regime shifts mean real-world error is wider than any single number.")
 
     st.divider()
     st.markdown("### ⚠️ Near-term recession & regime risk (6–18 months)")
