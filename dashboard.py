@@ -2815,13 +2815,18 @@ def get_quant_score(ticker):
     net_debt = (total_debt - total_cash) if total_debt is not None and total_cash is not None else None
     net_debt_to_ebitda = (net_debt / ebitda) if net_debt is not None and ebitda and ebitda > 0 else None
 
+    # Return on invested capital (fallback proxy). Invested capital = BOOK equity + total debt −
+    # cash. Using market cap here (as before) turned ROIC into an earnings-yield-on-market-value,
+    # which collapsed for expensive names and conflated 'quality' with 'cheapness' — the bug that
+    # made elite compounders (Costco, etc.) look low-quality. Book equity ≈ market cap / P/B.
+    book_equity = (market_cap / price_to_book) if (market_cap and price_to_book and price_to_book > 0) else None
     invested_capital_proxy = None
-    if market_cap is not None and total_debt is not None and total_cash is not None:
-        invested_capital_proxy = market_cap + total_debt - total_cash
+    if book_equity is not None and total_debt is not None and total_cash is not None:
+        invested_capital_proxy = book_equity + total_debt - total_cash
     roic_proxy = None
     if operating_margin is not None and invested_capital_proxy and invested_capital_proxy > 0 and total_revenue:
-        estimated_operating_income = total_revenue * operating_margin
-        roic_proxy = estimated_operating_income / invested_capital_proxy
+        nopat = total_revenue * operating_margin * 0.79          # after ~21% tax
+        roic_proxy = min(nopat / invested_capital_proxy, 1.0)    # cap: tiny book equity can inflate
 
     # When FMP provides authoritative figures, prefer them over our derived proxies.
     # (These come straight from filings, so they avoid the per-share x shares synthesis
@@ -2878,12 +2883,15 @@ def get_quant_score(ticker):
         volume_ratio = 1
         high_52 = low_52 = None
 
+    # Quality = capital efficiency FIRST (ROIC/ROE), margins second. Margins alone mismark elite
+    # low-margin/high-turnover businesses (Costco, Amazon) as low quality; their edge is turnover
+    # and returns on capital, not fat margins. Softer margin floors so thin margins aren't a flat 0.
     quality_score = (
-        safe_score(roic_proxy, 0.02, 0.18) * 0.28 +
-        safe_score(roe, 0.05, 0.30) * 0.22 +
-        safe_score(gross_margin, 0.20, 0.70) * 0.15 +
-        safe_score(operating_margin, 0.05, 0.35) * 0.18 +
-        safe_score(profit_margin, 0.03, 0.25) * 0.17
+        safe_score(roic_proxy, 0.05, 0.20) * 0.34 +
+        safe_score(roe, 0.05, 0.30) * 0.24 +
+        safe_score(gross_margin, 0.15, 0.65) * 0.12 +
+        safe_score(operating_margin, 0.04, 0.32) * 0.16 +
+        safe_score(profit_margin, 0.02, 0.22) * 0.14
     )
 
     cash_flow_score = (
@@ -2996,8 +3004,13 @@ def get_quant_score(ticker):
         risk_score * 0.05
     )
 
+    # Quality-gated value (Greenblatt-style): cheapness only counts as an "opportunity" if the
+    # business is decent. A cheap low-quality name (value trap) gets its valuation credit scaled
+    # down, so junk stops topping the undervalued list and cheap-AND-good names rise.
+    quality_gate = clamp(0.35 + 0.65 * quality_score / 100.0, 0, 100) / 100.0
+    quality_gated_value = valuation_score * quality_gate
     opportunity_score = (
-        valuation_score * 0.30 +
+        quality_gated_value * 0.30 +
         cash_flow_score * 0.20 +
         quality_score * 0.18 +
         growth_score * 0.12 +
