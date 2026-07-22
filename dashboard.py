@@ -392,6 +392,18 @@ def pct(value):
     return round(value * 100, 2)
 
 
+def norm_yield_pct(value):
+    """Normalize a dividend yield to a true percent, robust to the source's unit convention.
+    FMP returns dividendYield as a PERCENT (6.45) while other ratios are fractions (0.30) — so a
+    blind ×100 gives 645%. Rule: interpret as a fraction (×100); if that implies an absurd yield
+    (>25%), it was already a percent, so use it as-is. Handles both fraction and percent inputs."""
+    value = safe_float(value)
+    if value is None:
+        return None
+    as_pct = value * 100
+    return round(value, 2) if as_pct > 25 else round(as_pct, 2)
+
+
 def money(value):
     value = safe_float(value)
     if value is None:
@@ -3204,7 +3216,7 @@ def get_quant_score(ticker):
         "Beta": beta,
         "Volatility %": round(volatility * 100, 1),
         "Max Drawdown %": round(max_drawdown * 100, 1),
-        "Dividend Yield %": pct(dividend_yield),
+        "Dividend Yield %": norm_yield_pct(dividend_yield),
         "Payout Ratio %": pct(payout_ratio),
         "1M Return %": round(return_1m * 100, 1),
         "3M Return %": round(return_3m * 100, 1),
