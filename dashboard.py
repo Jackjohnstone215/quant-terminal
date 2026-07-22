@@ -1266,8 +1266,12 @@ def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth
             fair_pb = min(max(fair_pb, 0.3), 5.0)
             methods.append(("P/B (justified)", fair_pb * book_ps))
 
-    # Dividend Discount Model (Gordon growth) — for dividend payers
-    dy = safe_float(dividend_yield)
+    # Dividend Discount Model (Gordon growth) — for dividend payers.
+    # Normalize the yield to a FRACTION first: the FMP path supplies it as a percent (6.45), and
+    # dy*price below assumes a fraction — without this the "dividend" is ~100x too big, rails to
+    # the 2.5x-price cap, and inflates fair value for every payer.
+    dyp = norm_yield_pct(dividend_yield)
+    dy = (dyp / 100.0) if dyp is not None else None
     if dy and dy > 0.001:
         r = capm_rate(beta)
         g = min(max(safe_float(growth_rate, 0.02) or 0.02, 0.0), r - 0.005, 0.08)
@@ -2863,6 +2867,11 @@ def get_quant_score(ticker):
         ev_to_fcf = safe_float(info.get("_fmp_ev_to_fcf"))
     if info.get("_fmp_net_debt_to_ebitda") is not None:
         net_debt_to_ebitda = safe_float(info.get("_fmp_net_debt_to_ebitda"))
+    # A negative EV/FCF means the company is burning free cash — that's the WORST case for a
+    # cheapness score, not the best. Left raw, safe_score(neg, 8, 40, reverse=True) returns 100
+    # ("cheapest"). Map it to a large number so it scores as expensive/worst instead.
+    if ev_to_fcf is not None and ev_to_fcf <= 0:
+        ev_to_fcf = 999.0
     if info.get("_fmp_ocf_margin") is not None:
         ocf_margin = safe_float(info.get("_fmp_ocf_margin"))
     if info.get("_fmp_fcf_conversion") is not None:
@@ -4260,11 +4269,11 @@ def _buffett_pairs():
     return _forward_return_pairs([(pd.to_datetime(d), v) for d, v in hist])
 
 
-def consensus_backtest(min_train=30):
-    """Walk-forward backtest of the COMBINED (accuracy-weighted) ensemble — the honest 'how good
-    would this machine have been' test. Aligns CAPE/AIAE/Buffett to quarters; at each quarter,
-    fits all three regressions on prior data ONLY, R²-weight-combines the forecasts, and compares
-    to the realized next-decade return. Returns {'points':[(datetime, predicted%, actual%)],
+def consensus_backtest(min_train=20):
+    """Genuinely out-of-sample backtest of the COMBINED (accuracy-weighted) ensemble — the honest
+    'how good would this machine have been' test. Aligns CAPE/AIAE/Buffett to quarters; at each
+    forecast quarter, fits all three regressions on ONLY the training quarters whose 10-year
+    outcome had already matured by then (no lookahead), R²-weight-combines, compares to realized. Returns {'points':[(datetime, predicted%, actual%)],
     'rmse','mae','r2','hit1','hit2','n'} or None."""
     def by_q(pairs):
         out = {}
@@ -4276,12 +4285,14 @@ def consensus_backtest(min_train=30):
     if not (C and A and B):
         return None
     qs = sorted(set(C) & set(A) & set(B))
-    if len(qs) <= min_train + 4:
-        return None
     pts = []
-    for i in range(min_train, len(qs)):
-        train = qs[:i]
+    for i in range(len(qs)):
         q = qs[i]
+        fdate = C[q][2]
+        cutoff = fdate - pd.DateOffset(years=10)                 # only outcomes matured by now
+        train = [qs[j] for j in range(i) if C[qs[j]][2] <= cutoff]
+        if len(train) < min_train:
+            continue
         preds, weights = [], []
         for M in (C, A, B):
             sl, ic, r2 = _linreg([M[t][0] for t in train], [M[t][1] for t in train])
@@ -4289,7 +4300,9 @@ def consensus_backtest(min_train=30):
             weights.append(max(r2, 0.05))
         wsum = sum(weights)
         pred = sum(p * w for p, w in zip(preds, weights)) / wsum
-        pts.append((C[q][2], pred * 100, C[q][1] * 100))   # realized (~same across methods)
+        pts.append((fdate, pred * 100, C[q][1] * 100))   # realized (~same across methods)
+    if len(pts) < 8:
+        return None
     errs = [pr - ac for _, pr, ac in pts]
     n = len(pts)
     rmse = (sum(e * e for e in errs) / n) ** 0.5
@@ -4300,19 +4313,23 @@ def consensus_backtest(min_train=30):
     return {"points": pts, "rmse": rmse, "mae": mae, "r2": r2, "hit1": hit1, "hit2": hit2, "n": n}
 
 
-def walk_forward_backtest(pairs, min_train=40):
-    """Honest, no-lookahead backtest: sort by date; at each point fit the regression on ONLY the
-    prior data, forecast, and compare to the realized outcome. Returns
+def walk_forward_backtest(pairs, min_train=20):
+    """Genuinely out-of-sample backtest. At each forecast date we fit ONLY on training points
+    whose 10-year outcome had ALREADY matured by that date (date + 10y ≤ forecast date) — a
+    point's y is its realized forward-10yr return, which isn't observable until a decade later,
+    so training on not-yet-matured points would be lookahead. Returns
     {'points':[(datetime, predicted%, actual%)], 'rmse','mae','r2','n'} or None."""
     pairs = sorted(pairs, key=lambda p: p[0])
-    if len(pairs) <= min_train + 5:
-        return None
-    xs = [p[1] for p in pairs]
-    ys = [p[2] for p in pairs]
     pts = []
-    for i in range(min_train, len(pairs)):
-        sl, ic, _ = _linreg(xs[:i], ys[:i])
-        pts.append((pairs[i][0], (sl * xs[i] + ic) * 100, ys[i] * 100))
+    for i in range(len(pairs)):
+        cutoff = pairs[i][0] - pd.DateOffset(years=10)
+        train = [(pairs[j][1], pairs[j][2]) for j in range(i) if pairs[j][0] <= cutoff]
+        if len(train) < min_train:
+            continue
+        sl, ic, _ = _linreg([t[0] for t in train], [t[1] for t in train])
+        pts.append((pairs[i][0], (sl * pairs[i][1] + ic) * 100, pairs[i][2] * 100))
+    if len(pts) < 8:
+        return None
     errs = [pr - ac for _, pr, ac in pts]
     rmse = (sum(e * e for e in errs) / len(errs)) ** 0.5
     mae = sum(abs(e) for e in errs) / len(errs)
@@ -4495,7 +4512,7 @@ def render_market_forecast():
             fig.update_yaxes(gridcolor=CHART_GRID, title="10-yr annualized return", ticksuffix="%")
             fig.update_xaxes(gridcolor=CHART_GRID, title="Year forecast was made")
             st.plotly_chart(_style_fig(fig, height=320), width="stretch")
-            st.markdown("It nailed direction across 30 years — it warned of the weak 2000s *before* the dot-com bust and flagged strong returns after 2002. **Its one systematic flaw: it was too pessimistic through the 2010s**, undershooting a historic bull market by several points a year. Worth remembering, because today it's bearish again — the same setup where it has erred low before.")
+            st.markdown("This is a *genuinely* out-of-sample test — at each date it trains only on outcomes that had already matured by then. The model gets the **direction** right but the magnitude is noisy, and it **systematically undershot the 2010s** bull market by several points a year. Worth remembering because today it reads bearish — the same setup where it has erred low before. Treat it as a rough tilt in the odds, not a precise number.")
             st.divider()
             st.caption("The individual methods:")
 
@@ -4521,7 +4538,7 @@ def render_market_forecast():
                 st.markdown("  \n".join(
                     f"• Forecast made in **{y}**: {pr:+.1f}%/yr → actually delivered **{ac:+.1f}%/yr**"
                     for y, pr, ac in examples))
-        st.caption("Overlapping windows and a finite history mean these R²s are indicative, not guarantees — but they show the models have genuinely tracked the decade ahead, especially at valuation extremes.")
+        st.caption("Important limitation: with only ~1988-onward total-return data, a strict no-lookahead 10-year backtest has very few independent decades, so these out-of-sample R²s are noisy and single methods can look weak here. The academic evidence for CAPE/allocation (R²≈0.4–0.8) rests on ~150 years of data this live test doesn't have. Read it as directional support, not proof.")
 
     st.divider()
     st.markdown("### ⚠️ Near-term recession & regime risk (6–18 months)")
