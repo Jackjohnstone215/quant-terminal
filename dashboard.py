@@ -5950,6 +5950,109 @@ def opportunity_engine():
         st.dataframe(filtered.sort_values(score_type, ascending=False), width="stretch")
 
 
+def fair_value_confidence(row):
+    """Fair value as a RANGE plus a confidence level — an honest 'worth $X–$Y' instead of a false-
+    precise point. Confidence rises with tighter method agreement (narrow low/high band), fuller
+    data coverage, and a more predictable business (higher quality, lower volatility)."""
+    fv = safe_float(row.get("Fair Value"))
+    price = safe_float(row.get("Price"))
+    if not fv or not price:
+        return None
+    lo, hi = safe_float(row.get("Fair Value Low")), safe_float(row.get("Fair Value High"))
+    width = ((hi - lo) / fv) if (lo and hi and fv) else 0.6
+    cov = safe_float(row.get("Data Coverage %"), 60) / 100.0
+    qual = safe_float(row.get("Quality Score"), 50)
+    vol = safe_float(row.get("Volatility %"), 30)
+    pts = (40 if width < 0.4 else 25 if width < 0.7 else 10) + 30 * cov \
+        + (15 if qual >= 65 else 8 if qual >= 45 else 0) \
+        + (15 if vol < 30 else 8 if vol < 45 else 0)
+    conf = "High" if pts >= 75 else ("Moderate" if pts >= 50 else "Low")
+    return {"low": lo, "high": hi, "central": fv, "confidence": conf,
+            "upside": safe_float(row.get("Upside %")), "price": price}
+
+
+def investment_verdict(row):
+    """The ONE integrated read that connects the app's separate signals: is this a good business,
+    at a good price, with acceptable risk — therefore Buy / Watch / Avoid? Reconciles quality,
+    moat (ROIC), margin of safety, and risk into a single call with the 2-3 reasons that drive it.
+    Uses only already-computed row fields (fast — no extra fetch). Returns dict."""
+    q = safe_float(row.get("Quality Score"), 50)
+    roic = safe_float(row.get("ROIC Proxy %"))
+    upside = safe_float(row.get("Upside %"), 0)
+    dte = safe_float(row.get("Debt/Equity"))
+    ndte = safe_float(row.get("Net Debt/EBITDA"))
+    vol = safe_float(row.get("Volatility %"))
+
+    # Business quality
+    good_biz = (q >= 65) or (roic is not None and roic >= 15)
+    weak_biz = (q < 40) and (roic is None or roic < 8)
+    biz = "high-quality" if good_biz else ("low-quality" if weak_biz else "mixed-quality")
+
+    # Margin of safety (price vs fair value)
+    mos = "cheap" if upside >= 15 else ("expensive" if upside <= -10 else "fair")
+
+    # Risk flags
+    high_risk = (dte is not None and dte >= 180) or (ndte is not None and ndte >= 4) or (vol is not None and vol >= 50)
+
+    # Integrated call
+    if weak_biz:
+        call, tone = "Avoid", "🔴"
+    elif good_biz and mos == "cheap":
+        call, tone = ("Watch", "🟡") if high_risk else ("Buy", "🟢")
+    elif good_biz and mos == "fair":
+        call, tone = "Accumulate / Watch", "🟢"
+    elif good_biz and mos == "expensive":
+        call, tone = "Watch (wait for a better price)", "🟡"
+    elif mos == "cheap":            # mixed quality but cheap
+        call, tone = "Watch (do more work)", "🟡"
+    else:
+        call, tone = "Hold / Neutral", "🟡"
+
+    reasons = []
+    if roic is not None and roic >= 15:
+        reasons.append(f"High ROIC (~{roic:.0f}%) — hallmark of a durable, capital-efficient business.")
+    elif q >= 65:
+        reasons.append(f"Strong quality profile ({q:.0f}/100).")
+    if weak_biz:
+        reasons.append(f"Weak business economics (quality {q:.0f}/100{f', ROIC ~{roic:.0f}%' if roic is not None else ''}) — cheap isn't enough; this can be a value trap.")
+    if mos == "cheap":
+        reasons.append(f"Trading ~{upside:.0f}% below estimated fair value — a real margin of safety.")
+    elif mos == "expensive":
+        reasons.append(f"Trading ~{abs(upside):.0f}% above fair value — little to no margin of safety.")
+    else:
+        reasons.append("Priced roughly in line with fair value.")
+    if high_risk:
+        bits = []
+        if dte is not None and dte >= 180:
+            bits.append(f"high leverage (D/E ~{dte:.0f}%)")
+        if vol is not None and vol >= 50:
+            bits.append(f"high volatility (~{vol:.0f}%)")
+        reasons.append("Elevated risk: " + ", ".join(bits) + ".")
+
+    fvc = fair_value_confidence(row)
+    return {"call": call, "tone": tone, "business": biz, "margin_of_safety": mos,
+            "reasons": reasons[:3], "fvc": fvc}
+
+
+def render_investment_verdict(row):
+    """The lead synthesis on the Deep Dive — connects fair value, quality, margin of safety, and
+    risk into one coherent call. Everything in the tabs below is the evidence behind it."""
+    iv = investment_verdict(row)
+    fvc = iv["fvc"]
+    with st.container(border=True):
+        st.markdown(f"## {iv['tone']} Verdict: {iv['call']}")
+        if fvc and fvc.get("low") and fvc.get("high"):
+            st.markdown(f"**Worth ~{money(fvc['low'])}–{money(fvc['high'])}** (mid {money(fvc['central'])}) · "
+                        f"now {money(fvc['price'])} · **{fvc['upside']:+.0f}%** to mid · **{fvc['confidence']} confidence**")
+        elif fvc:
+            st.markdown(f"**Fair value ~{money(fvc['central'])}** · now {money(fvc['price'])} · "
+                        f"**{fvc['upside']:+.0f}%** · **{fvc['confidence']} confidence**")
+        st.caption(f"A **{iv['business']}** business at a **{iv['margin_of_safety']}** price. Why:")
+        for r in iv["reasons"]:
+            st.markdown(f"- {r}")
+        st.caption("The one read that ties the tabs below together: is it a good business, at a good price, with acceptable risk? Everything below is the evidence. Research aid, not advice.")
+
+
 def stock_deep_dive():
     st.title("Quant Stock Deep Dive")
     st.caption("Deep statistical research page: master scores, valuation, cash flow, ROIC proxy, relative strength, news, and risks.")
@@ -5977,6 +6080,11 @@ def stock_deep_dive():
             f"Data coverage: **{row.get('Data Coverage %', 'N/A')}%** · "
             f"Prices/news: Yahoo Finance · As of {row.get('Scan Date', today_string())}"
         )
+
+        # LEAD with the one integrated verdict; the metrics/tabs below are supporting evidence.
+        render_investment_verdict(row)
+        st.caption("Quick stats:")
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Research Action", verdict)
         c2.metric("Conviction", f"{row['Conviction Score']}/100")
