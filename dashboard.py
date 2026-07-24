@@ -6231,17 +6231,19 @@ def stock_deep_dive():
             central = safe_float(row.get("Fair Value"))
             votes = row.get("FV Votes")
             fv_conf = row.get("FV Confidence")
+            # Streamlit markdown treats paired $ as LaTeX — escape them or the $ signs vanish.
+            md_money = lambda v: money(v).replace("$", "\\$")
             if lo and hi and central:
                 if isinstance(votes, str) and "/" in votes:
                     n_above, n_tot = votes.split("/")
                     st.info(
-                        f"**{n_above} of {n_tot} independent methods value {row['Ticker']} above today's price ({money(row['Price'])}).**  "
-                        f"Method range: {money(lo)} – {money(hi)} · median {money(central)} · upside to median {row['Upside %']}%."
+                        f"**{n_above} of {n_tot} independent methods value {row['Ticker']} above today's price ({md_money(row['Price'])}).**  "
+                        f"Method range: {md_money(lo)} – {md_money(hi)} · median {md_money(central)} · upside to median {row['Upside %']}%."
                     )
                 else:
                     st.info(
-                        f"**Fair value range: {money(lo)} – {money(hi)}**  (median {money(central)}).  "
-                        f"Current price: {money(row['Price'])} · Margin of safety: {row['Margin of Safety %']}%."
+                        f"**Fair value range: {md_money(lo)} – {md_money(hi)}**  (median {md_money(central)}).  "
+                        f"Current price: {md_money(row['Price'])} · Margin of safety: {row['Margin of Safety %']}%."
                     )
                 conf_txt = {
                     "High": "🟢 High agreement — independent methods land close together; this zone is fairly reliable.",
@@ -6254,9 +6256,10 @@ def stock_deep_dive():
                                 else "🟡 Moderate disagreement — treat fair value as a wide zone, not a target." if spread <= 0.7
                                 else "🔴 Low confidence — the methods disagree sharply; re-scan to get the un-anchored verdict.")
                 st.caption(conf_txt)
-                st.caption(f"How each method votes → {row.get('Valuation Methods', 'N/A')}")
+                methods_txt = str(row.get("Valuation Methods", "N/A")).replace("$", "\\$")
+                st.caption(f"How each method votes → {methods_txt}")
             else:
-                st.info(f"Fair value estimate: {money(row['Fair Value'])}. Margin of safety: {row['Margin of Safety %']}%.")
+                st.info(f"Fair value estimate: {md_money(row['Fair Value'])}. Margin of safety: {row['Margin of Safety %']}%.")
 
             st.divider()
             val_df = pd.DataFrame([
@@ -7887,6 +7890,98 @@ def building_blocks_page():
     st.caption("Educational framing built on public/textbook portfolio theory — not personalized financial advice. Your right mix depends on your goals, horizon, and risk tolerance.")
 
 
+# Broad asset-class classification for the whole-portfolio allocation / rebalancing view.
+BROAD_CLASSES = ["US Stocks", "International", "Real Estate", "Bonds", "Commodities/Gold", "Cash"]
+_ETF_CLASS = {}
+for _t in "VOO VTI SPY IVV QQQ VUG VTV VIG SCHD DIA IWM VB VO IJR IJH MGK SPLG VYM DGRO".split():
+    _ETF_CLASS[_t] = "US Stocks"
+for _t in "VXUS VEA EFA IEFA VWO EEM IEMG SCHF IXUS VEU SPDW VT".split():
+    _ETF_CLASS[_t] = "International"
+for _t in "VNQ SCHH IYR VNQI XLRE USRT REET O".split():
+    _ETF_CLASS[_t] = "Real Estate"
+for _t in "BND AGG BNDX TLT IEF SHY TIP SCHP VCIT LQD MUB VTEB BSV GOVT VGIT".split():
+    _ETF_CLASS[_t] = "Bonds"
+for _t in "GLD IAU SLV DBC GLDM PDBC USO".split():
+    _ETF_CLASS[_t] = "Commodities/Gold"
+for _t in "BIL SGOV SHV VMFXX VUSXX".split():
+    _ETF_CLASS[_t] = "Cash"
+
+TARGET_PROFILES = {
+    "Aggressive (long horizon)": {"US Stocks": 65, "International": 20, "Real Estate": 10, "Bonds": 5, "Commodities/Gold": 0, "Cash": 0},
+    "Balanced": {"US Stocks": 45, "International": 15, "Real Estate": 10, "Bonds": 25, "Commodities/Gold": 5, "Cash": 0},
+    "Conservative": {"US Stocks": 25, "International": 8, "Real Estate": 7, "Bonds": 50, "Commodities/Gold": 5, "Cash": 5},
+}
+
+
+def broad_asset_class(ticker):
+    """Map a holding to a broad asset class for the allocation view. Known ETFs map directly;
+    anything else (individual stocks) defaults to US Stocks."""
+    return _ETF_CLASS.get(str(ticker).upper().strip(), "US Stocks")
+
+
+def rebalance_page():
+    st.title("⚖️ Rebalance")
+    st.caption("Your whole portfolio by asset class vs a target — and the specific moves to get back on track. Rebalancing (trim what ran up, add what lagged) mechanically sells high / buys low and keeps risk on target — one of the few genuine free lunches in investing.")
+
+    pf = load_portfolio()
+    cash = st.number_input("Cash / money-market you hold ($, optional)", min_value=0.0, value=0.0, step=1000.0,
+                           help="Include savings/MMF so your allocation reflects your whole investable net worth.")
+    if (pf is None or pf.empty) and cash <= 0:
+        st.info("No holdings yet — add them on **Portfolio Manager AI** (or enter cash above), then come back for your allocation and rebalancing plan.")
+        return
+
+    rows = []
+    if pf is not None and not pf.empty:
+        with st.spinner("Valuing holdings…"):
+            for _, h in pf.iterrows():
+                t = str(h.get("Ticker", "")).upper().strip()
+                sh = safe_float(h.get("Shares"), 0)
+                if not t or not sh or sh <= 0:
+                    continue
+                px = get_last_price(t)
+                if px is not None:
+                    rows.append({"Ticker": t, "Class": broad_asset_class(t), "Value": sh * px})
+    if cash > 0:
+        rows.append({"Ticker": "CASH", "Class": "Cash", "Value": float(cash)})
+    if not rows:
+        st.warning("Couldn't value your holdings right now (price source unavailable). Try again shortly.")
+        return
+
+    hdf = pd.DataFrame(rows)
+    total = float(hdf["Value"].sum())
+    st.metric("Investable net worth (tracked)", money(total))
+    cur = hdf.groupby("Class")["Value"].sum()
+
+    profile = st.selectbox("Target allocation", list(TARGET_PROFILES.keys()),
+                           help="Illustrative templates — a longer horizon supports more equities; nearer a goal, more bonds/cash.")
+    tgt = TARGET_PROFILES[profile]
+
+    table = []
+    for cls in BROAD_CLASSES:
+        cur_pct = (float(cur.get(cls, 0)) / total * 100) if total else 0
+        tgt_pct = tgt.get(cls, 0)
+        move = (tgt_pct - cur_pct) / 100 * total
+        if abs(cur_pct - tgt_pct) < 3:
+            action = "✓ on target"
+        else:
+            action = f"Add {money(abs(move))}" if move > 0 else f"Trim {money(abs(move))}"
+        table.append({"Asset class": cls, "Current %": round(cur_pct, 1),
+                      "Target %": tgt_pct, "Drift": round(cur_pct - tgt_pct, 1), "Move to target": action})
+    st.dataframe(pd.DataFrame(table), width="stretch", hide_index=True)
+
+    unders = [r for r in table if r["Drift"] <= -5]
+    overs = [r for r in table if r["Drift"] >= 5]
+    if unders:
+        u = min(unders, key=lambda r: r["Drift"])
+        st.info(f"📉 Most underweight: **{u['Asset class']}** ({u['Current %']}% vs {u['Target %']}% target). The tax-smart move is to point your next contributions here rather than selling winners.")
+    if overs:
+        o = max(overs, key=lambda r: r["Drift"])
+        st.warning(f"📈 Most overweight: **{o['Asset class']}** ({o['Current %']}% vs {o['Target %']}%). If it's in a tax-advantaged account, trimming back to target is low-cost; in a taxable account, weigh the capital-gains hit first.")
+    if not unders and not overs:
+        st.success("🟢 Your allocation is close to target across the board — little to do but keep contributing.")
+    st.caption("Individual stocks are counted as US Stocks; known ETFs map to their asset class. Educational, not personalized advice — mind taxes and transaction costs before trading.")
+
+
 # Grouped navigation: pages organized by workflow (find → analyze → build → learn), each with a
 # consistent icon. Button-based so it reads as a real nav and stays fully headless-testable.
 NAV_SECTIONS = [
@@ -7909,6 +8004,7 @@ NAV_SECTIONS = [
     ("Portfolio", [
         ("🧱 Building Blocks", building_blocks_page),
         ("💼 Portfolio Manager AI", portfolio_manager_page),
+        ("⚖️ Rebalance", rebalance_page),
         ("📐 Position Sizer", position_sizer_page),
         ("🧪 Paper Trading", paper_trading_page),
     ]),
