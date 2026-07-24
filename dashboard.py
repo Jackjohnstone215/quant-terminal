@@ -5849,6 +5849,56 @@ def verdict_context(mos, sector=None, ticker_news=None):
     return layers
 
 
+def verdict_pillars(row):
+    """The four pillars the verdict is BUILT FROM, each 0-100, so the sub-scores ladder UP into the
+    one call instead of floating beside it. This is the 'connected' view: Quality + Value + Health +
+    Timing are literally what the Buy/Watch/Avoid decision weighs. Returns list of (label, score, note)."""
+    q = safe_float(row.get("Quality Score"), 50)
+    roic = safe_float(row.get("ROIC Proxy %"))
+    upside = safe_float(row.get("Upside %"), 0)
+    fin = safe_float(row.get("Financial Strength Score"), 50)
+    mom = safe_float(row.get("Momentum Score"), 50)
+    rs = safe_float(row.get("Relative Strength Score"), 50)
+    # Value pillar: margin of safety mapped to 0-100 (fair value = 50, cheap climbs, expensive falls).
+    val = clamp(50 + upside * 1.3)
+    timing = clamp(mom * 0.6 + rs * 0.4)
+    qnote = (f"ROIC ~{roic:.0f}% — capital-efficient" if (roic is not None and roic >= 15)
+             else "strong economics" if q >= 65 else "weak economics — value-trap risk" if q < 40 else "mixed")
+    vnote = (f"~{upside:.0f}% below fair value" if upside >= 15
+             else f"~{abs(upside):.0f}% above fair value" if upside <= -10 else "near fair value")
+    fnote = "fortress balance sheet" if fin >= 70 else "stretched balance sheet" if fin < 40 else "adequate"
+    tnote = "price trend with you" if timing >= 60 else "price trend against you" if timing < 40 else "neutral trend"
+    return [
+        ("Business Quality", q, qnote),
+        ("Valuation", val, vnote),
+        ("Financial Health", fin, fnote),
+        ("Timing", timing, tnote),
+    ]
+
+
+def verdict_reconciliation(row, iv):
+    """Resolve the ONE contradiction that made the app feel 'broken apart': the S&P-ranking quant
+    score and the investment verdict can point opposite ways. This states which governs and WHY,
+    so the two systems read as one. Returns a string, or None when they already agree."""
+    oq = safe_float(row.get("Overall Quant Score"), 50)
+    call = iv["call"]
+    cautious = call.startswith("Avoid") or "wait" in call or "do more work" in call or call.startswith("Hold")
+    constructive = call.startswith("Buy") or call.startswith("Accumulate")
+    if cautious and oq >= 70:
+        why = ("the business quality is weak (cheap isn't enough — this is how value traps look)"
+               if iv["business"] == "low-quality"
+               else "there's little margin of safety at today's price" if iv["margin_of_safety"] == "expensive"
+               else "quality and price don't yet line up")
+        return (f"⚖️ **Why the verdict is more cautious than the {oq:.0f}/100 rank:** the quant engine rewards "
+                f"momentum, growth, and relative strength — good for *ranking* the market — but here {why}. "
+                f"For long-term compounding, **business quality + price govern**; momentum is only a timing overlay.")
+    if constructive and oq < 55:
+        return (f"⚖️ **Why the verdict is more constructive than the {oq:.0f}/100 rank:** the quant rank is held down "
+                f"by soft momentum/relative-strength, but those are *timing* signals. The **business-and-price case** "
+                f"leads for a long-term investor — a quiet chart on a good business bought cheap is often the setup.")
+    return None
+
+
 def render_investment_verdict(row, ticker_news=None):
     """The lead synthesis on the Deep Dive — connects fair value, quality, margin of safety, and
     risk into one coherent call, THEN places it inside its environment (market backdrop, cycle,
@@ -5866,6 +5916,18 @@ def render_investment_verdict(row, ticker_news=None):
         st.caption(f"**The company** — a **{iv['business']}** business at a **{iv['margin_of_safety']}** price:")
         for r in iv["reasons"]:
             st.markdown(f"- {r}")
+
+        # The four pillars the call is built from — the sub-scores ladder UP into the verdict.
+        pillars = verdict_pillars(row)
+        st.caption("**What drives this verdict** — the four pillars, each 0-100:")
+        pcols = st.columns(4)
+        for col, (label, score, note) in zip(pcols, pillars):
+            col.progress(int(clamp(score)) / 100.0, text=f"{label} · {score:.0f}")
+            col.caption(note)
+
+        recon = verdict_reconciliation(row, iv)
+        if recon:
+            st.markdown(recon)
 
         layers = verdict_context(iv["margin_of_safety"], row.get("Sector"), ticker_news)
         if layers:
@@ -5905,10 +5967,11 @@ def stock_deep_dive():
 
         # LEAD with the one integrated verdict; the metrics/tabs below are supporting evidence.
         render_investment_verdict(row, ticker_news)
-        st.caption("Quick stats:")
+        st.caption("Scoring engine's separate read — used to *rank* the S&P 500 (momentum- and growth-aware). "
+                   "The verdict above governs the long-term call; this is how the name sorts against the field:")
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Research Action", verdict)
+        c1.metric("Ranking Action", verdict)
         c2.metric("Conviction", f"{row['Conviction Score']}/100")
         c3.metric("Evidence", f"{row['Evidence Score']}/100")
         c4.metric("Overall Quant", f"{row['Overall Quant Score']}/100 — {row['Overall Grade']}")
