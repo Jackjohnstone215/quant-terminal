@@ -49,14 +49,21 @@ That principle shaped the architecture in visible ways: missing data is skipped,
 
 Best experienced live: **https://quant-terminal-museq45xbpxspebjedgotf.streamlit.app/**
 
-Worth a look: the **Opportunity Map**, a **Deep Dive** valuation tab (the "What's priced in?" expectations check), the **Market Forecast**, and the **Factor Efficacy** table.
+**The Opportunity Map** — the whole S&P 500 on one canvas, valuation vs. quality (top-right = cheap *and* good):
 
-<!-- To embed images: create a docs/ folder, drop in PNGs, and uncomment:
-| | |
-|---|---|
-| ![Opportunity Map](docs/opportunity-map.png) | ![Deep Dive — What's priced in](docs/deep-dive-expectations.png) |
-| ![Market Forecast](docs/market-forecast.png) | ![Factor Efficacy](docs/factor-efficacy.png) |
--->
+![Opportunity Map](docs/opportunity-map.png)
+
+**"What's priced in?"** — the expectations-first valuation check (here: the price implies 21%/yr growth from a business whose payouts leave it able to self-fund roughly none):
+
+![Deep Dive — What's priced in](docs/deep-dive-expectations.png)
+
+**Market forecast, walk-forward track record** — what the model predicted at each point in history vs. the 10-yr return that actually followed:
+
+![Market Forecast track record](docs/market-forecast.png)
+
+**Factor Efficacy** — the engine grading itself against realized returns. Note that most factors currently show *negative* IC on the early sample: the tool is designed to report that, not hide it.
+
+![Factor Efficacy](docs/factor-efficacy.png)
 
 ---
 
