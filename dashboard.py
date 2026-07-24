@@ -1209,43 +1209,100 @@ def monte_carlo_dcf(fcf_ps, base_growth, beta, n=3000, seed=0):
     return np.array(vals) if len(vals) > 100 else None
 
 
-def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth_score,
-                        cash_flow_score, risk_score, growth_rate, high_52, low_52,
+_SECTOR_MULT_CACHE = {"mtime": None, "table": {}}
+
+
+def sector_median_multiples(sector):
+    """Median P/E and EV/FCF of the stock's SECTOR from the latest saved scan (needs ≥3
+    peers with a valid reading). This is what 'fair multiple' should mean: the market's
+    own current pricing of comparable businesses — it moves with rates and sentiment
+    automatically, unlike a hardcoded 18x/24x/30x guess. Returns (pe, ev_fcf); either may
+    be None. Cached against the scan file's mtime so scans re-read it only when it changes."""
+    if not sector or str(sector) == "Unknown":
+        return None, None
+    try:
+        if not SP500_CACHE.exists():
+            return None, None
+        mtime = SP500_CACHE.stat().st_mtime
+        if _SECTOR_MULT_CACHE["mtime"] != mtime:
+            df = pd.read_csv(SP500_CACHE)
+            table = {}
+            if "Sector" in df.columns:
+                for col, key in (("P/E", "pe"), ("EV/FCF", "ev_fcf")):
+                    if col in df.columns:
+                        v = pd.to_numeric(df[col], errors="coerce")
+                        v = v.where((v > 0) & (v < 200))   # drop broken/extreme readings
+                        med = v.groupby(df["Sector"]).median()
+                        cnt = v.groupby(df["Sector"]).count()
+                        for sec, m in med.items():
+                            if cnt.get(sec, 0) >= 3 and pd.notna(m):
+                                table.setdefault(str(sec), {})[key] = float(m)
+            _SECTOR_MULT_CACHE.update(mtime=mtime, table=table)
+        row = _SECTOR_MULT_CACHE["table"].get(str(sector), {})
+        return row.get("pe"), row.get("ev_fcf")
+    except Exception:
+        return None, None
+
+
+def _rate_anchored_multiple(beta):
+    """Fallback fair multiple when sector data is thin: value $1 of earnings/FCF as a
+    perpetuity growing at the terminal rate, discounted at CAPM — 1/(r − g). Moves with
+    the rate environment (rates up → fair multiple down), unlike a hardcoded number."""
+    r = capm_rate(beta)
+    g = min(0.025, RISK_FREE_RATE)
+    return 1.0 / (r - g) if r > g else None
+
+
+def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, growth_rate,
                         beta=None, dividend_yield=None, roe=None, payout=None,
                         sector=None, price_to_book=None, market_cap=None, total_debt=None,
-                        total_cash=None, net_debt_to_ebitda=None):
-    """Blend several valuation methods into an honest fair-value range.
+                        total_cash=None, net_debt_to_ebitda=None,
+                        sector_pe=None, sector_ev_fcf=None):
+    """Blend independent valuation methods into an honest verdict — WITHOUT anchoring to
+    the current price.
 
-    Sector-aware: banks/insurers can't be valued on free cash flow, so for financials we
-    skip DCF/EV-FCF and add a justified P/B (from ROE) instead — the right tool per business.
-    Each method is capped to a sane band around price; central value is the median."""
+    v2 (un-anchored). The old version capped every method to [0.4x, 2.5x] of the current
+    price and voted in a 52-week-midpoint 'method' — which guaranteed fair value always
+    looked reasonable next to the price and made extreme mispricing structurally invisible.
+    Now: no price caps, no price-history pseudo-methods, no PEG (redundant with P/E +
+    growth, and the main source of exploding outputs), and no score-conditioned multiples
+    (quality is scored elsewhere; baking it into fair value double-counted it). Multiples
+    come from the stock's own sector (median P/E and EV/FCF from the latest scan), falling
+    back to a rate-anchored perpetuity multiple. Financials get justified P/B instead of
+    cash-flow methods.
+
+    Instead of pretending to a precise target, the result carries a verdict layer:
+    n_above/n_methods = how many methods value the stock ABOVE today's price (the votes),
+    and a confidence grade from how tightly the methods agree. central/low/high are the
+    median and full range of the (uncapped) methods."""
     price = safe_float(price)
     if not price or price <= 0:
-        return {"central": None, "low": None, "high": None, "methods": []}
+        return {"central": None, "low": None, "high": None, "methods": [],
+                "n_above": 0, "n_methods": 0, "confidence": None}
     is_financial = bool(sector) and any(k in str(sector).lower() for k in ["financ", "bank", "insur"])
     methods = []
 
     pe = safe_float(pe)
     if pe and pe > 0:
         eps = price / pe
-        fair_pe = 18
-        if quality_score >= 80 and growth_score >= 75:
-            fair_pe = 30
-        elif quality_score >= 70 and growth_score >= 60:
-            fair_pe = 24
-        elif quality_score < 45:
-            fair_pe = 14
-        methods.append(("P/E", eps * fair_pe))
+        fair_pe = safe_float(sector_pe)
+        if fair_pe and fair_pe > 0:
+            methods.append((f"P/E (sector median {fair_pe:.0f}x)", eps * fair_pe))
+        else:
+            fair_pe = _rate_anchored_multiple(beta)
+            if fair_pe:
+                methods.append((f"P/E (rate-anchored {fair_pe:.0f}x)", eps * fair_pe))
 
     if not is_financial:
         ev_to_fcf = safe_float(ev_to_fcf)
         if ev_to_fcf and ev_to_fcf > 0:
-            fair_ev_fcf = 20
-            if quality_score >= 80 and cash_flow_score >= 75:
-                fair_ev_fcf = 28
-            elif quality_score < 50:
-                fair_ev_fcf = 14
-            methods.append(("EV/FCF", price * (fair_ev_fcf / ev_to_fcf)))
+            fair_ev_fcf = safe_float(sector_ev_fcf)
+            label = "EV/FCF (sector median {:.0f}x)"
+            if not (fair_ev_fcf and fair_ev_fcf > 0):
+                fair_ev_fcf = _rate_anchored_multiple(beta)
+                label = "EV/FCF (rate-anchored {:.0f}x)"
+            if fair_ev_fcf:
+                methods.append((label.format(fair_ev_fcf), price * (fair_ev_fcf / ev_to_fcf)))
 
         # Heavily-levered non-financials → FCFF discounted at WACC (captures the debt tax
         # shield). Lightly-levered → the simpler FCFE / cost-of-equity DCF.
@@ -1256,7 +1313,7 @@ def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth
             if dcf:
                 methods.append(("DCF (FCFF/WACC)", dcf))
         else:
-            dcf = _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta, roe, payout)
+            dcf = _dcf_fair_value(fcf_ps, growth_rate, beta, roe, payout)
             if dcf:
                 methods.append(("DCF (3-stage, CAPM)", dcf))
     else:
@@ -1271,44 +1328,39 @@ def estimate_fair_value(price, pe, fcf_ps, ev_to_fcf, peg, quality_score, growth
             fair_pb = min(max(fair_pb, 0.3), 5.0)
             methods.append(("P/B (justified)", fair_pb * book_ps))
 
-    # Dividend Discount Model (Gordon growth) — for dividend payers.
+    # Dividend Discount Model (Gordon growth) — only for MEANINGFUL payers (yield ≥ 1.5%).
+    # For a token payer (AAPL at ~0.4%) the dividend isn't the return vehicle, and DDM
+    # produces an absurdly low value that pollutes the votes and the confidence grade.
     # Normalize the yield to a FRACTION first: the FMP path supplies it as a percent (6.45), and
-    # dy*price below assumes a fraction — without this the "dividend" is ~100x too big, rails to
-    # the 2.5x-price cap, and inflates fair value for every payer.
+    # dy*price below assumes a fraction — without this the "dividend" is ~100x too big and
+    # inflates fair value for every payer.
     dyp = norm_yield_pct(dividend_yield)
     dy = (dyp / 100.0) if dyp is not None else None
-    if dy and dy > 0.001:
+    if dy and dy >= 0.015:
         r = capm_rate(beta)
         g = min(max(safe_float(growth_rate, 0.02) or 0.02, 0.0), r - 0.005, 0.08)
         if r > g:
             d1 = (dy * price) * (1 + g)
             methods.append(("Dividend (DDM)", d1 / (r - g)))
 
-    peg = safe_float(peg)
-    if peg and peg > 0:
-        fair_peg = 1.4
-        if quality_score >= 80:
-            fair_peg = 2.0
-        elif quality_score >= 70:
-            fair_peg = 1.7
-        if growth_score < 45:
-            fair_peg = 1.1
-        methods.append(("PEG", price * (fair_peg / peg)))
-
-    high_52, low_52 = safe_float(high_52), safe_float(low_52)
-    if high_52 and low_52:
-        midpoint = (high_52 + low_52) / 2
-        methods.append(("52-week midpoint", midpoint * (1 + (quality_score - 50) / 250)))
-
+    # Sanity filter only (drop broken values, never clamp toward price — clamping fabricates).
+    methods = [(n, v) for n, v in methods
+               if safe_float(v) is not None and math.isfinite(v) and v > 0]
     if not methods:
-        return {"central": price, "low": price, "high": price, "methods": []}
+        return {"central": None, "low": None, "high": None, "methods": [],
+                "n_above": 0, "n_methods": 0, "confidence": None}
 
-    lo_cap, hi_cap = 0.4 * price, 2.5 * price
-    capped = [(n, min(max(v, lo_cap), hi_cap)) for n, v in methods]
-    vals = sorted(v for _, v in capped)
+    vals = sorted(v for _, v in methods)
     m = len(vals)
     central = vals[m // 2] if m % 2 else (vals[m // 2 - 1] + vals[m // 2]) / 2
-    return {"central": central, "low": min(vals), "high": max(vals), "methods": capped}
+    n_above = sum(1 for v in vals if v > price)
+    if m < 2:
+        confidence = "Low"          # a single method is an opinion, not a consensus
+    else:
+        ratio = vals[-1] / vals[0]
+        confidence = "High" if ratio <= 1.6 else ("Medium" if ratio <= 2.6 else "Low")
+    return {"central": central, "low": vals[0], "high": vals[-1], "methods": methods,
+            "n_above": n_above, "n_methods": m, "confidence": confidence}
 
 
 class DataUnavailable(Exception):
@@ -1627,6 +1679,49 @@ def _yf_history(ticker, period="2y"):
         except Exception:
             time.sleep(1.0 * (attempt + 1))
     return pd.DataFrame()
+
+
+def get_total_payout_ratio(ticker):
+    """TOTAL shareholder payout ratio = (dividends + NET buybacks) / net income, summed
+    across the available annual history (Yahoo cash-flow statement — free, no FMP quota).
+
+    The dividend-only payout ratio badly misreads buyback-heavy firms: a company returning
+    90% of earnings via repurchases shows a near-zero 'payout' and therefore looks like it
+    retains (and can reinvest) almost everything — which overstated sustainable growth for
+    exactly the mega caps the engine scans most. Buybacks are netted against share issuance
+    so repurchases that merely mop up stock comp don't count as capital returned.
+    Multi-year sums smooth lumpy buyback timing. Returns a fraction, or None if the
+    statement isn't available (callers fall back to the dividend-only ratio)."""
+    ck = f"totalpayout::{ticker}"
+    cached = _disk_get_json(ck, FMP_CACHE_TTL)
+    if cached is not None:
+        return cached.get("ratio")
+    try:
+        cf = yf.Ticker(ticker).cashflow
+        if cf is None or getattr(cf, "empty", True):
+            return None
+
+        def row_total(*names):
+            for nm in names:
+                if nm in cf.index:
+                    vals = [safe_float(v) for v in cf.loc[nm].values]
+                    vals = [v for v in vals if v is not None]
+                    if vals:
+                        return sum(vals)
+            return None
+
+        ni = row_total("Net Income", "Net Income From Continuing Operations")
+        if ni is None or ni <= 0:
+            return None   # loss-makers: payout ratio isn't meaningful
+        div = abs(row_total("Cash Dividends Paid", "Common Stock Dividend Paid") or 0.0)
+        buyback = abs(row_total("Repurchase Of Capital Stock", "Common Stock Payments") or 0.0)
+        issuance = abs(row_total("Issuance Of Capital Stock", "Common Stock Issuance") or 0.0)
+        net_buyback = max(buyback - issuance, 0.0)
+        ratio = (div + net_buyback) / ni
+        _disk_set_json(ck, {"ratio": ratio})   # only cache real reads, so failures retry
+        return ratio
+    except Exception:
+        return None
 
 
 # ----- Financial Modeling Prep (optional upgrade over Yahoo for fundamentals) -----
@@ -2836,6 +2931,10 @@ def get_quant_score(ticker):
     quick_ratio = safe_float(info.get("quickRatio"))
     dividend_yield = safe_float(info.get("dividendYield"))
     payout_ratio = safe_float(info.get("payoutRatio"))
+    # TOTAL payout (dividends + net buybacks) is what actually limits reinvestment; the
+    # dividend-only ratio makes buyback-heavy firms look like they retain everything.
+    total_payout = get_total_payout_ratio(ticker)
+    payout_for_growth = total_payout if total_payout is not None else payout_ratio
 
     fcf_yield = (free_cashflow / market_cap) if free_cashflow and market_cap else None
     earnings_yield = (1 / pe) if pe and pe > 0 else None
@@ -2992,22 +3091,25 @@ def get_quant_score(ticker):
         safe_score(revenue_growth, -0.03, 0.25) * 0.10
     )
 
-    # Fair value from a capped, median-based blend of P/E, EV/FCF, DCF, PEG and 52-week
-    # methods (see estimate_fair_value). fcf_per_share = fcf_yield * price.
+    # Fair value from the UN-ANCHORED blend (see estimate_fair_value): sector-median or
+    # rate-anchored multiples + DCF + DDM (+ justified P/B for financials). No price caps,
+    # no 52-week or PEG pseudo-methods. fcf_per_share = fcf_yield * price.
     fcf_per_share = (fcf_yield * price) if (fcf_yield is not None and price) else None
+    sector_pe_med, sector_evfcf_med = sector_median_multiples(sector)
     fv = estimate_fair_value(
-        price, pe, fcf_per_share, ev_to_fcf, peg,
-        quality_score, growth_score, cash_flow_score, risk_score,
-        revenue_growth, high_52, low_52,
-        beta=beta, dividend_yield=dividend_yield, roe=roe, payout=payout_ratio,
+        price, pe, fcf_per_share, ev_to_fcf, revenue_growth,
+        beta=beta, dividend_yield=dividend_yield, roe=roe, payout=payout_for_growth,
         sector=sector, price_to_book=price_to_book,
         market_cap=market_cap, total_debt=total_debt, total_cash=total_cash,
         net_debt_to_ebitda=net_debt_to_ebitda,
+        sector_pe=sector_pe_med, sector_ev_fcf=sector_evfcf_med,
     )
     fair_value = fv["central"] if fv["central"] else price
     fair_value_low = fv["low"]
     fair_value_high = fv["high"]
     fair_value_methods = " | ".join(f"{n}: {money(v)}" for n, v in fv["methods"]) if fv["methods"] else "None"
+    fv_votes = f"{fv['n_above']}/{fv['n_methods']}" if fv.get("n_methods") else None
+    fv_confidence = fv.get("confidence")
     margin_of_safety = ((fair_value - price) / fair_value) if fair_value and price else None
     upside_to_fair_value = ((fair_value - price) / price) if fair_value and price else None
 
@@ -3188,6 +3290,8 @@ def get_quant_score(ticker):
         "Fair Value Low": round(fair_value_low, 2) if fair_value_low else None,
         "Fair Value High": round(fair_value_high, 2) if fair_value_high else None,
         "Valuation Methods": fair_value_methods,
+        "FV Votes": fv_votes,            # e.g. "3/4" = methods valuing it above today's price
+        "FV Confidence": fv_confidence,  # High/Medium/Low from method agreement
         "Upside %": round(upside_to_fair_value * 100, 1) if upside_to_fair_value is not None else None,
         "Margin of Safety %": round(margin_of_safety * 100, 1) if margin_of_safety is not None else None,
         "Sell Target": round(sell_target, 2) if sell_target else None,
@@ -3243,6 +3347,7 @@ def get_quant_score(ticker):
         "Max Drawdown %": round(max_drawdown * 100, 1),
         "Dividend Yield %": norm_yield_pct(dividend_yield),
         "Payout Ratio %": pct(payout_ratio),
+        "Total Payout %": pct(total_payout),   # dividends + net buybacks, / net income
         "1M Return %": round(return_1m * 100, 1),
         "3M Return %": round(return_3m * 100, 1),
         "6M Return %": round(return_6m * 100, 1),
@@ -5160,6 +5265,7 @@ def portfolio_risk_analytics(analysis):
     eff_n = round(1 / hhi, 1) if hhi > 0 else len(tickers)
 
     corr, avg_corr, top_pair = None, None, None
+    sharpe, sortino, ann_return, ann_vol = None, None, None, None
     if len(tickers) >= 2:
         price_data = get_price_history(tickers, period="1y")
         rets = {}
@@ -5182,6 +5288,22 @@ def portfolio_risk_analytics(analysis):
                 if mx == mx:  # not NaN
                     where = cm.stack().idxmax()
                     top_pair = (where[0], where[1], round(float(mx), 2))
+
+                # Risk-adjusted performance (trailing ~1y): Sharpe (excess return per unit of total
+                # volatility) and Sortino (per DOWNSIDE volatility only — penalizes losses, not
+                # upside). This is the "gain per unit of risk" the whole strategy optimizes for.
+                cols = list(rdf.columns)
+                pw = weights.reindex(cols).fillna(0).values.astype(float)
+                if pw.sum() > 0:
+                    pw = pw / pw.sum()   # renormalize across holdings that have return data
+                    port = (rdf[cols].values * pw).sum(axis=1)   # daily portfolio returns
+                    ar = float(np.mean(port) * 252)
+                    av = float(np.std(port) * (252 ** 0.5))
+                    downside = port[port < 0]
+                    dd = float(np.std(downside) * (252 ** 0.5)) if len(downside) else 0.0
+                    ann_return, ann_vol = round(ar * 100, 1), round(av * 100, 1)
+                    sharpe = round((ar - RISK_FREE_RATE) / av, 2) if av > 0 else None
+                    sortino = round((ar - RISK_FREE_RATE) / dd, 2) if dd > 0 else None
 
     # Sector concentration: top-sector weight + effective number of sectors (1/HHI of sector wts)
     top_sector, top_sector_w, eff_sectors = None, None, None
@@ -5212,6 +5334,10 @@ def portfolio_risk_analytics(analysis):
         "top_sector_weight": top_sector_w,
         "effective_sectors": eff_sectors,
         "diversification_score": div_score,
+        "sharpe": sharpe,
+        "sortino": sortino,
+        "ann_return": ann_return,
+        "ann_vol": ann_vol,
     }
 
 
@@ -5475,6 +5601,27 @@ def portfolio_manager_page():
                 dlabel = "Well diversified" if ds >= 70 else ("Moderately diversified" if ds >= 45 else "Concentrated / one-bet risk")
                 st.metric("Diversification Score", f"{ds}/100", dlabel)
                 st.caption("Blends how *independently* your holdings move (correlation), how many *effective* positions you really have, and how many sectors you span — not just the raw number of names.")
+
+            # Risk-adjusted return — the "gain per unit of risk" scorecard (trailing ~1 year).
+            sh, so = risk.get("sharpe"), risk.get("sortino")
+            arr, avv = risk.get("ann_return"), risk.get("ann_vol")
+            if sh is not None or arr is not None:
+                INFL = 2.5  # assumed ~inflation, %
+                q1, q2, q3 = st.columns(3)
+                q1.metric("Sharpe (trailing 1y)", sh if sh is not None else "N/A",
+                          help="Return above the risk-free rate per unit of total volatility. >1 good, >2 excellent. The core 'gain per unit of risk' measure.")
+                q2.metric("Sortino (trailing 1y)", so if so is not None else "N/A",
+                          help="Like Sharpe but only counts DOWNSIDE volatility — it doesn't punish you for big up-moves. Higher = better.")
+                if arr is not None:
+                    q3.metric("Return vs inflation", f"{arr - INFL:+.1f}% real", f"{arr:+.1f}% nominal · vol {avv:.0f}%")
+                if sh is not None:
+                    verdict = ("excellent risk-adjusted return" if sh >= 2 else
+                               "strong risk-adjusted return" if sh >= 1 else
+                               "modest — you're not being paid much for the risk" if sh >= 0.5 else
+                               "poor — the risk isn't earning its keep")
+                    st.caption(f"Sharpe {sh}: {verdict}. Trailing figures — a scorecard of how efficiently *this* mix has converted risk into return, not a forecast.")
+                if arr is not None and arr - INFL <= 0:
+                    st.caption("⚠️ Trailing real return is at/below inflation — the portfolio hasn't grown purchasing power over this window.")
 
             r1, r2, r3 = st.columns(3)
             wb = risk.get("weighted_beta")
@@ -6034,6 +6181,84 @@ def stock_deep_dive():
                     st.caption("Same-sector comparison from your latest scan (this stock included). Higher Valuation Score = cheaper vs peers.")
         with tab2:
             st.subheader("Valuation + Cash Flow")
+
+            # ---- 1) Expectations FIRST. The honest valuation question isn't "what is it
+            # worth?" but "what does today's price already assume, and is that believable?" ----
+            st.markdown("### 🎯 What's priced in?")
+            st.caption("This solves the DCF *backwards* for the FCF growth today's price implies, then checks that against what the business can actually fund. If the price demands more growth than the company can finance from its own returns, someone is paying for hope.")
+            fcf_ps_dd = (safe_float(row.get("FCF Yield %"), 0) / 100) * safe_float(row.get("Price"), 0)
+            implied = reverse_dcf_growth(row.get("Price"), fcf_ps_dd, row.get("Beta"))
+            hist_g = safe_float(row.get("Revenue Growth %"))
+            roe_f = safe_float(row.get("ROE %"))
+            # Prefer TOTAL payout (dividends + net buybacks) for retention; older scan rows
+            # only carry the dividend-only ratio, which overstates what's fundable.
+            payout_f = safe_float(row.get("Total Payout %"))
+            payout_src = "after dividends + buybacks"
+            if payout_f is None:
+                payout_f = safe_float(row.get("Payout Ratio %"))
+                payout_src = "after dividends only — buyback data unavailable, so this likely overstates retention"
+            sg = sustainable_growth(roe_f / 100, (payout_f / 100) if payout_f is not None else 0.0) if roe_f is not None else None
+            if implied is None:
+                st.caption("Reverse DCF needs positive free cash flow — not meaningful for this stock. Judge it on the evidence below instead.")
+            else:
+                rr = capm_rate(row.get("Beta"))
+                e1, e2, e3 = st.columns(3)
+                e1.metric("Market-implied growth", f"{implied*100:.0f}%/yr",
+                          help=f"The 5-yr FCF growth today's price assumes (3-stage DCF at a {rr*100:.1f}% CAPM rate).")
+                e2.metric("Fundable growth", f"{sg*100:.0f}%/yr" if sg is not None else "N/A",
+                          help=f"Retention × ROE ({payout_src}) — what the business can self-finance.")
+                e3.metric("Recent revenue growth", f"{hist_g:.0f}%" if hist_g is not None else "N/A")
+                if hist_g is not None:
+                    if implied * 100 > hist_g + 8:
+                        st.warning(f"🔴 The price assumes **acceleration** well beyond recent growth (~{hist_g:.0f}%) — a high bar to clear.")
+                    elif implied * 100 < hist_g - 5:
+                        st.success(f"🟢 The price assumes a **slowdown** vs recent growth (~{hist_g:.0f}%) — potential value if growth merely holds.")
+                    else:
+                        st.info(f"Implied growth is roughly in line with recent growth (~{hist_g:.0f}%) — expectations look reasonable.")
+                if sg is not None:
+                    st.caption(
+                        f"**Fundable (sustainable) growth ≈ {sg*100:.0f}%/yr** — ROE {roe_f:.0f}% × retention ({payout_src}). "
+                        + ("🔴 The price implies *more* growth than the company can fund from its own returns — it must raise capital, cut payouts, or exceed its historical efficiency."
+                           if implied * 100 > sg * 100 + 3
+                           else "🟢 The implied growth is within what the business can fund internally — a realistic, self-financing path.")
+                    )
+
+            # ---- 2) Fair-value evidence — supporting testimony, not a price target ----
+            st.divider()
+            st.markdown("### Fair-value evidence")
+            st.caption("Un-anchored methods: nothing here is capped toward today's price, so a big gap is allowed to show up. Read the *votes* and the *agreement*, not just the midpoint.")
+            lo, hi = safe_float(row.get("Fair Value Low")), safe_float(row.get("Fair Value High"))
+            central = safe_float(row.get("Fair Value"))
+            votes = row.get("FV Votes")
+            fv_conf = row.get("FV Confidence")
+            if lo and hi and central:
+                if isinstance(votes, str) and "/" in votes:
+                    n_above, n_tot = votes.split("/")
+                    st.info(
+                        f"**{n_above} of {n_tot} independent methods value {row['Ticker']} above today's price ({money(row['Price'])}).**  "
+                        f"Method range: {money(lo)} – {money(hi)} · median {money(central)} · upside to median {row['Upside %']}%."
+                    )
+                else:
+                    st.info(
+                        f"**Fair value range: {money(lo)} – {money(hi)}**  (median {money(central)}).  "
+                        f"Current price: {money(row['Price'])} · Margin of safety: {row['Margin of Safety %']}%."
+                    )
+                conf_txt = {
+                    "High": "🟢 High agreement — independent methods land close together; this zone is fairly reliable.",
+                    "Medium": "🟡 Moderate disagreement — treat fair value as a wide zone, not a target.",
+                    "Low": "🔴 Low confidence — the methods disagree sharply (or only one applies), so no single number deserves your trust here. Lean on the expectations check above.",
+                }.get(str(fv_conf))
+                if conf_txt is None:   # pre-update scan rows: fall back to a spread-based read
+                    spread = (hi - lo) / central if central else 0
+                    conf_txt = ("🟢 High agreement — the methods broadly concur." if spread <= 0.35
+                                else "🟡 Moderate disagreement — treat fair value as a wide zone, not a target." if spread <= 0.7
+                                else "🔴 Low confidence — the methods disagree sharply; re-scan to get the un-anchored verdict.")
+                st.caption(conf_txt)
+                st.caption(f"How each method votes → {row.get('Valuation Methods', 'N/A')}")
+            else:
+                st.info(f"Fair value estimate: {money(row['Fair Value'])}. Margin of safety: {row['Margin of Safety %']}%.")
+
+            st.divider()
             val_df = pd.DataFrame([
                 {"Metric": "P/E", "Value": row["P/E"], "Why It Matters": "Price relative to earnings."},
                 {"Metric": "Forward P/E", "Value": row["Forward P/E"], "Why It Matters": "Price relative to expected earnings."},
@@ -6045,24 +6270,6 @@ def stock_deep_dive():
                 {"Metric": "FCF Conversion %", "Value": row["FCF Conversion %"], "Why It Matters": "How well operating cash becomes free cash."},
             ])
             st.dataframe(val_df, width="stretch")
-            lo, hi = row.get("Fair Value Low"), row.get("Fair Value High")
-            central = safe_float(row.get("Fair Value"))
-            if lo and hi and central:
-                spread = (hi - lo) / central if central else 0
-                if spread <= 0.35:
-                    conf = "🟢 High agreement — the methods broadly concur, so this fair-value zone is fairly reliable."
-                elif spread <= 0.7:
-                    conf = "🟡 Moderate disagreement — treat fair value as a wide zone, not a target."
-                else:
-                    conf = "🔴 Low confidence — the methods disagree sharply, so the fair-value estimate is unreliable for this stock. Lean on the individual factor scores instead."
-                st.info(
-                    f"**Fair value range: {money(lo)} – {money(hi)}**  (central estimate {money(central)}).  "
-                    f"Current price: {money(row['Price'])} · Margin of safety: {row['Margin of Safety %']}%."
-                )
-                st.caption(f"{conf}")
-                st.caption(f"How each method votes → {row.get('Valuation Methods', 'N/A')}")
-            else:
-                st.info(f"Fair value estimate: {money(row['Fair Value'])}. Margin of safety: {row['Margin of Safety %']}%.")
 
             st.divider()
             st.markdown("### Valuation vs. its own history")
@@ -6092,39 +6299,6 @@ def stock_deep_dive():
                 hist_fig.update_xaxes(gridcolor=CHART_GRID)
                 st.plotly_chart(_style_fig(hist_fig, height=300), width="stretch")
                 st.caption("⚠️ 'Cheap vs its own history' only helps if the business hasn't deteriorated — a falling multiple can be justified. Cross-check with the 5-year trends tab.")
-
-            st.divider()
-            st.markdown("### Reverse DCF — what growth is priced in?")
-            st.caption("Instead of guessing fair value, this solves for the FCF growth rate the *current price* already assumes. If that's higher than the company can realistically deliver, the stock is expensive.")
-            fcf_ps_dd = (safe_float(row.get("FCF Yield %"), 0) / 100) * safe_float(row.get("Price"), 0)
-            implied = reverse_dcf_growth(row.get("Price"), fcf_ps_dd, row.get("Beta"))
-            if implied is None:
-                st.caption("Reverse DCF needs positive free cash flow — not meaningful for this stock.")
-            else:
-                hist_g = safe_float(row.get("Revenue Growth %"))
-                rr = capm_rate(row.get("Beta"))
-                st.write(f"At today's price, the market is pricing in **~{implied*100:.0f}%/yr** free-cash-flow growth for the next 5 years (discounting at a {rr*100:.1f}% CAPM rate).")
-                if hist_g is not None:
-                    if implied * 100 > hist_g + 8:
-                        st.warning(f"🔴 That's **well above** its recent revenue growth (~{hist_g:.0f}%). The price assumes acceleration — a high bar to clear.")
-                    elif implied * 100 < hist_g - 5:
-                        st.success(f"🟢 That's **below** its recent revenue growth (~{hist_g:.0f}%). The market is pricing in a slowdown — potential value if growth holds.")
-                    else:
-                        st.info(f"That's roughly in line with its recent revenue growth (~{hist_g:.0f}%) — the price looks reasonable on growth expectations.")
-
-                # Sustainable-growth reality check (Damodaran): can the business FUND this growth?
-                roe_f = safe_float(row.get("ROE %"))
-                payout_f = safe_float(row.get("Payout Ratio %"))
-                if roe_f is not None:
-                    sg = sustainable_growth(roe_f / 100, (payout_f / 100) if payout_f is not None else 0.0)
-                    if sg is not None:
-                        st.caption(
-                            f"**Fundable (sustainable) growth ≈ {sg*100:.0f}%/yr** — that's what the business can self-fund "
-                            f"(ROE {roe_f:.0f}% × retention). "
-                            + ("🔴 The price implies *more* growth than the company can fund from its own returns — it must either raise capital or exceed its historical efficiency."
-                               if implied * 100 > sg * 100 + 3
-                               else "🟢 The implied growth is within what the business can fund internally — a realistic, self-financing path.")
-                        )
 
             # ---- Normalized (cyclically-adjusted) earnings ----
             price_now = safe_float(row.get("Price"))
