@@ -953,7 +953,7 @@ CATALYST_RULES = [
     ("Earnings",           "📊", ["earnings", "revenue", "profit", "guidance", " eps", "quarterly", " results", "beats", "misses", "forecast", "outlook"]),
     ("Analyst action",     "🎯", ["upgrade", "downgrade", "price target", "analyst", " rating", "initiat", "reiterat", "overweight", "underweight"]),
     ("Capital return",     "💰", ["dividend", "buyback", "repurchase", "stock split", "share split"]),
-    ("Legal / Regulatory", "⚖️", ["lawsuit", "sec ", "doj", "regulat", "antitrust", " fine", "probe", "investigat", "settlement", "subpoena", "recall"]),
+    ("Legal / Regulatory / Policy", "⚖️", ["lawsuit", "sec ", "doj", "regulat", "antitrust", " fine", "probe", "investigat", "settlement", "subpoena", "recall", "tariff", "trade war", "sanction", "export control", "export ban", "subsidy", "executive order", "legislation", " bill ", "congress", "price cap", "fda", "epa", "ftc", "antidumping", "duties"]),
     ("Product / Tech",     "🚀", ["launch", "unveil", "new product", "partnership", "contract", "rollout", "artificial intelligence", "chip", "semiconductor", "patent"]),
     ("Leadership",         "👤", [" ceo", " cfo", "resign", "appoint", "steps down", "named ", "executive"]),
     ("Macro",              "🌐", ["fed ", "inflation", "cpi", "interest rate", "tariff", "recession", "payrolls", "jobs report"]),
@@ -968,6 +968,33 @@ def classify_catalyst(title, summary=""):
         if any(w in text for w in words):
             return label, icon
     return "News", "📰"
+
+
+# How exposed each sector is to government / policy action — a real, structured signal (tariffs,
+# regulation, drug pricing, antitrust, budgets), not a vibe. Keyed on the sector strings the scan
+# uses. (level, specific policy risks). Public/common-knowledge mapping, not proprietary.
+SECTOR_POLICY_EXPOSURE = {
+    "Healthcare": ("High", "drug-pricing legislation, FDA approvals, Medicare/Medicaid policy"),
+    "Technology": ("High", "antitrust, data-privacy rules, chip export controls, tariffs on hardware"),
+    "Communication Services": ("High", "antitrust, content/data regulation, spectrum & telecom policy"),
+    "Energy": ("High", "environmental regulation, drilling/permitting, subsidies, trade/OPEC"),
+    "Financial Services": ("High", "bank capital rules, Fed/rate policy, consumer-finance regulation"),
+    "Financials": ("High", "bank capital rules, Fed/rate policy, consumer-finance regulation"),
+    "Utilities": ("High", "rate regulation, clean-energy mandates, environmental rules"),
+    "Industrials": ("Medium-High", "tariffs & trade policy, infrastructure spending, defense budgets, emissions rules"),
+    "Basic Materials": ("Medium-High", "tariffs/antidumping duties, environmental & mining regulation"),
+    "Materials": ("Medium-High", "tariffs/antidumping duties, environmental & mining regulation"),
+    "Consumer Cyclical": ("Medium", "tariffs on imported goods, trade policy, labor/wage rules"),
+    "Consumer Discretionary": ("Medium", "tariffs on imported goods, trade policy, labor/wage rules"),
+    "Consumer Defensive": ("Medium", "tariffs, food/drug safety regulation, labor rules"),
+    "Consumer Staples": ("Medium", "tariffs, food/drug safety regulation, labor rules"),
+    "Real Estate": ("Medium", "interest-rate policy, zoning/housing policy, REIT tax treatment"),
+}
+
+
+def policy_exposure(sector):
+    """(level, risks) describing how policy-sensitive a sector is, or None if unknown/low."""
+    return SECTOR_POLICY_EXPOSURE.get(str(sector).strip())
 
 
 def build_catalyst_timeline(news):
@@ -5771,11 +5798,11 @@ def investment_verdict(row):
             "reasons": reasons[:3], "fvc": fvc}
 
 
-def verdict_context(mos, ticker_news=None):
+def verdict_context(mos, sector=None, ticker_news=None):
     """Connect the company call to its ENVIRONMENT — top-down (the market's long-run valuation +
-    near-term recession risk, from the cached forecast) and flow (this stock's recent news tilt).
-    Returns a list of (label, text) layers reconciled with the stock's margin of safety (`mos`).
-    Layered on purpose — different horizons, shown separately, NOT blended into one number."""
+    near-term recession risk), policy/regulation (sector exposure + recent policy news), and flow
+    (this stock's recent news tilt). Returns a list of (label, text) layers reconciled with the
+    stock's margin of safety. Layered on purpose — different horizons, NOT blended into one number."""
     layers = []
     data = _forecast_data() or {}
     read, cons, rec = data.get("read"), data.get("cons"), data.get("rec")
@@ -5800,6 +5827,21 @@ def verdict_context(mos, ticker_news=None):
         rr = rec["risk"]
         tail = " — a downturn could hand you a cheaper entry, so keep some dry powder." if rr != "Low" else " — no imminent-downturn signal, but that's a timing read, not a valuation one."
         layers.append(("⚠️ Near-term cycle", f"Recession risk looks **{rr.lower()}**{tail}"))
+    # Policy / regulation — structural (sector exposure) + flow (recent policy/tariff headlines)
+    pe = policy_exposure(sector)
+    policy_news = 0
+    if ticker_news:
+        policy_news = sum(1 for a in ticker_news
+                          if classify_catalyst(a.get("Title", ""), a.get("Summary", ""))[0].startswith("Legal"))
+    if pe:
+        level, risks = pe
+        txt = f"**{level}** policy exposure for this sector — watch: {risks}."
+        if policy_news:
+            txt += f" **{policy_news} recent policy/regulatory headline(s)** on this name — check the Catalysts tab."
+        layers.append(("🏛️ Policy & regulation", txt))
+    elif policy_news:
+        layers.append(("🏛️ Policy & regulation", f"**{policy_news} recent policy/regulatory headline(s)** on this name — see the Catalysts tab."))
+
     if ticker_news:
         tl = build_catalyst_timeline(ticker_news)
         if tl and tl.get("rollup"):
@@ -5825,7 +5867,7 @@ def render_investment_verdict(row, ticker_news=None):
         for r in iv["reasons"]:
             st.markdown(f"- {r}")
 
-        layers = verdict_context(iv["margin_of_safety"], ticker_news)
+        layers = verdict_context(iv["margin_of_safety"], row.get("Sector"), ticker_news)
         if layers:
             st.markdown("**The bigger picture** — the same company looks different depending on its environment:")
             for label, text in layers:
