@@ -21,6 +21,12 @@ def main():
     if not bundle or not bundle.get("val"):
         print("Forecast bundle empty (sources unreachable) — leaving existing cache untouched.", flush=True)
         return
+    if bundle.get("degraded"):
+        # A partial bundle (FRED/Z.1 outage during the run) must not replace a healthy cache:
+        # the app skips degraded caches anyway, so committing one would just force live
+        # recomputes for every visitor until the next scheduled run.
+        print("Forecast bundle DEGRADED (some sources unreachable) — leaving existing cache untouched.", flush=True)
+        return
     bundle["generated"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with open("forecast_cache.json", "w", encoding="utf-8") as f:
         json.dump(bundle, f, default=str)   # default=str serializes backtest Timestamps

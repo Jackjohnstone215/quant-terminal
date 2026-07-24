@@ -19,3 +19,6 @@ __pycache__/
 # --- OS / editor cruft ---
 .DS_Store
 Thumbs.db
+
+# Internal session notes - not for the public repo
+SESSION-HANDOFF.md
