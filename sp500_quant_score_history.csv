@@ -585,3 +585,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-07-23,KEY,KeyCorp,Financial Services,45.7,51.9,29.5,53.7,50.3,44.3,22.61,20.31,-10.2,Tier 4 — Low Priority / Avoid,General Watchlist,44.4,37.5,41.2
 2026-07-23,KEYS,Keysight Technologies Inc.,Technology,59.7,68.5,40.2,68.4,64.2,57.5,326.6,171.44,-47.5,Tier 4 — Low Priority / Avoid,General Watchlist,54.0,37.5,49.8
 2026-07-23,KMB,Kimberly-Clark Corporation,Consumer Defensive,39.9,46.0,27.1,42.0,46.3,39.4,107.44,84.77,-21.1,Tier 4 — Low Priority / Avoid,General Watchlist,25.8,5.0,24.9
+2026-07-24,KIM,Kimco Realty Corporation (HC),Real Estate,51.9,56.1,32.9,68.5,53.8,51.1,25.98,16.69,-35.8,Tier 4 — Low Priority / Avoid,General Watchlist,40.1,27.5,39.1
+2026-07-24,KMI,"Kinder Morgan, Inc.",Energy,46.8,49.7,28.0,67.0,45.7,46.6,32.97,25.37,-23.0,Tier 4 — Low Priority / Avoid,General Watchlist,34.1,15.0,31.8
+2026-07-24,KKR,KKR & Co. Inc.,Financial Services,28.0,33.1,20.0,25.3,34.8,27.2,97.7,41.16,-57.9,Tier 4 — Low Priority / Avoid,General Watchlist,22.2,2.5,18.8
+2026-07-24,KLAC,KLA Corporation,Technology,64.9,73.5,44.1,70.3,77.8,61.6,214.09,85.64,-60.0,Tier 3 — Watchlist Only,General Watchlist,61.7,75.0,63.6
+2026-07-24,KHC,The Kraft Heinz Company,Consumer Defensive,39.0,41.8,27.2,48.9,39.6,39.5,25.47,24.25,-4.8,Tier 4 — Low Priority / Avoid,General Watchlist,39.2,15.0,31.7
+2026-07-24,KR,Kroger Company (The),Consumer Defensive,21.9,26.0,15.2,22.8,23.1,23.0,56.61,36.07,-36.3,Tier 4 — Low Priority / Avoid,Recovery Candidate,5.8,0.0,10.4
+2026-07-24,LHX,"L3Harris Technologies, Inc.",Industrials,36.1,41.7,24.7,40.9,36.8,36.9,302.54,269.14,-11.0,Tier 4 — Low Priority / Avoid,General Watchlist,36.5,12.5,29.3
+2026-07-24,LH,Labcorp Holdings Inc.,Healthcare,40.7,43.4,24.8,58.2,38.1,40.9,296.55,199.95,-32.6,Tier 4 — Low Priority / Avoid,General Watchlist,38.2,12.5,30.7
+2026-07-24,LRCX,Lam Research Corporation,Technology,70.3,82.0,48.6,73.0,82.5,66.3,311.59,141.52,-54.6,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",58.1,65.0,62.0
+2026-07-24,LVS,Las Vegas Sands Corp.,Consumer Cyclical,36.1,42.3,30.8,25.4,47.1,35.8,46.12,50.42,9.3,Tier 4 — Low Priority / Avoid,Recovery Candidate,29.0,15.0,28.1
+2026-07-24,LDOS,"Leidos Holdings, Inc.",Technology,36.3,41.7,34.7,23.4,45.1,36.9,113.49,142.49,25.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,29.1,2.5,25.7
+2026-07-24,LEN,Lennar Corporation,Consumer Cyclical,24.6,28.1,17.0,23.2,31.8,24.8,83.62,52.18,-37.6,Tier 4 — Low Priority / Avoid,General Watchlist,32.3,25.0,26.6
+2026-07-24,LII,"Lennox International, Inc.",Industrials,33.2,37.9,22.4,34.0,41.0,32.8,538.0,298.45,-44.5,Tier 4 — Low Priority / Avoid,General Watchlist,15.3,0.0,17.4
+2026-07-24,LLY,Eli Lilly and Company,Healthcare,61.3,71.0,40.8,68.6,68.1,59.0,1193.91,975.68,-18.3,Tier 3 — Watchlist Only,General Watchlist,48.4,40.0,49.0
+2026-07-24,LIN,Linde plc,Basic Materials,46.5,53.5,30.6,51.3,52.2,46.6,511.52,325.1,-36.4,Tier 4 — Low Priority / Avoid,General Watchlist,41.5,0.0,31.5
+2026-07-24,LYV,"Live Nation Entertainment, Inc.",Communication Services,37.7,39.9,24.5,51.4,37.6,37.1,176.48,131.0,-25.8,Tier 4 — Low Priority / Avoid,General Watchlist,23.1,0.0,21.3
+2026-07-24,LMT,Lockheed Martin Corporation,Industrials,36.9,36.2,22.0,56.2,37.6,36.7,581.92,411.64,-29.3,Tier 4 — Low Priority / Avoid,General Watchlist,18.2,5.0,20.0
+2026-07-24,L,Loews Corporation,Financial Services,42.1,42.7,27.1,59.1,42.6,43.1,117.96,110.28,-6.5,Tier 4 — Low Priority / Avoid,General Watchlist,43.9,25.0,36.4
+2026-07-24,LOW,"Lowe's Companies, Inc.",Consumer Cyclical,27.3,34.0,20.2,22.1,32.3,28.3,204.82,170.83,-16.6,Tier 4 — Low Priority / Avoid,General Watchlist,17.9,0.0,16.9
+2026-07-24,LULU,lululemon athletica inc.,Consumer Cyclical,47.1,56.1,46.3,23.3,62.7,46.8,112.49,183.27,62.9,Tier 4 — Low Priority / Avoid,Recovery Candidate,55.0,62.5,54.4
+2026-07-24,LITE,Lumentum Holdings Inc.,Technology,45.4,49.3,28.7,61.0,46.5,42.8,782.33,312.93,-60.0,Tier 4 — Low Priority / Avoid,General Watchlist,24.3,17.5,28.5
+2026-07-24,LYB,LyondellBasell Industries NV,Basic Materials,19.0,14.4,9.2,42.4,12.7,19.7,61.35,48.72,-20.6,Tier 4 — Low Priority / Avoid,General Watchlist,10.9,0.0,9.6
+2026-07-24,MTB,M&T Bank Corporation,Financial Services,55.7,57.9,42.7,67.9,57.1,55.2,248.77,341.82,37.4,Tier 4 — Low Priority / Avoid,General Watchlist,53.7,62.5,54.9
+2026-07-24,MPC,Marathon Petroleum Corporation,Energy,35.3,30.3,17.6,73.0,24.7,35.2,315.0,220.65,-30.0,Tier 4 — Low Priority / Avoid,General Watchlist,15.7,17.5,20.8
+2026-07-24,MAR,Marriott International,Consumer Cyclical,48.5,54.4,32.7,55.5,54.6,47.4,372.73,199.23,-46.5,Tier 4 — Low Priority / Avoid,General Watchlist,30.9,15.0,32.0
+2026-07-24,MRSH,Marsh,Financial Services,47.9,57.1,34.9,41.5,60.3,47.3,178.6,151.9,-14.9,Tier 4 — Low Priority / Avoid,General Watchlist,37.2,15.0,34.8
+2026-07-24,MLM,"Martin Marietta Materials, Inc.",Basic Materials,38.3,49.1,27.7,31.2,43.7,38.4,554.12,257.21,-53.6,Tier 4 — Low Priority / Avoid,General Watchlist,33.0,12.5,29.5
+2026-07-24,MRVL,"Marvell Technology, Inc.",Technology,52.1,56.6,34.9,63.8,58.2,48.8,195.19,129.63,-33.6,Tier 4 — Low Priority / Avoid,General Watchlist,42.7,27.5,40.0
+2026-07-24,MAS,Masco Corporation,Industrials,43.7,48.9,29.7,50.3,48.7,42.3,78.62,63.51,-19.2,Tier 4 — Low Priority / Avoid,General Watchlist,32.7,2.5,27.8
+2026-07-24,MA,Mastercard Incorporated,Financial Services,62.7,74.2,50.9,50.5,76.4,61.4,536.34,639.61,19.3,Tier 3 — Watchlist Only,General Watchlist,50.7,40.0,52.0
+2026-07-24,MKC,"McCormick & Company, Incorporat",Consumer Defensive,40.0,45.2,37.1,30.7,46.1,40.8,50.86,83.49,64.1,Tier 4 — Low Priority / Avoid,General Watchlist,29.3,2.5,27.1
+2026-07-24,MCD,McDonald's Corporation,Consumer Cyclical,45.1,56.5,33.4,33.2,57.4,45.1,265.51,218.52,-17.7,Tier 4 — Low Priority / Avoid,General Watchlist,33.6,0.0,29.2
+2026-07-24,MCK,McKesson Corporation,Healthcare,38.7,42.6,24.4,50.5,39.1,38.8,840.91,682.01,-18.9,Tier 4 — Low Priority / Avoid,General Watchlist,35.9,2.5,26.9
+2026-07-24,MDT,Medtronic plc.,Healthcare,45.6,55.3,32.4,41.6,53.9,45.6,83.27,72.02,-13.5,Tier 4 — Low Priority / Avoid,General Watchlist,45.6,12.5,36.3
+2026-07-24,MRK,"Merck & Company, Inc.",Healthcare,60.0,64.9,39.7,73.7,66.8,58.2,130.5,108.67,-16.7,Tier 3 — Watchlist Only,General Watchlist,58.2,52.5,54.7
+2026-07-24,META,"Meta Platforms, Inc.",Communication Services,58.8,77.4,45.0,35.4,77.2,56.8,606.5,526.68,-13.2,Tier 4 — Low Priority / Avoid,General Watchlist,57.6,37.5,52.5
+2026-07-24,MET,"MetLife, Inc.",Financial Services,36.7,36.3,20.1,62.4,30.9,36.7,93.53,74.73,-20.1,Tier 4 — Low Priority / Avoid,General Watchlist,26.6,27.5,28.3
+2026-07-24,MTD,"Mettler-Toledo International, I",Healthcare,42.9,50.9,30.6,39.0,53.3,41.8,1325.06,663.81,-49.9,Tier 4 — Low Priority / Avoid,General Watchlist,27.4,2.5,26.2
+2026-07-24,MGM,MGM Resorts International,Consumer Cyclical,27.3,22.7,14.9,54.2,21.7,26.7,46.0,28.23,-38.6,Tier 4 — Low Priority / Avoid,General Watchlist,3.0,7.5,11.4
+2026-07-24,MCHP,Microchip Technology Incorporat,Technology,38.9,45.7,28.7,40.5,41.5,36.9,78.65,35.01,-55.5,Tier 4 — Low Priority / Avoid,General Watchlist,32.9,5.0,27.2
+2026-07-24,MU,"Micron Technology, Inc.",Technology,64.9,75.5,45.0,68.4,74.9,60.9,929.32,836.38,-10.0,Tier 3 — Watchlist Only,General Watchlist,58.2,65.0,60.1
+2026-07-24,MSFT,Microsoft Corporation,Technology,53.5,70.0,40.4,32.7,70.9,52.3,383.95,302.97,-21.1,Tier 4 — Low Priority / Avoid,General Watchlist,51.3,37.5,48.2
+2026-07-24,MAA,Mid-America Apartment Communiti,Real Estate,39.8,45.1,28.1,40.6,47.0,40.3,133.81,83.69,-37.5,Tier 4 — Low Priority / Avoid,General Watchlist,26.4,2.5,24.6
+2026-07-24,MRNA,"Moderna, Inc.",Healthcare,33.7,34.5,18.7,56.5,27.5,32.8,54.2,41.66,-23.1,Tier 4 — Low Priority / Avoid,General Watchlist,30.6,40.0,31.9
+2026-07-24,TAP,Molson Coors Beverage Company,Consumer Defensive,31.6,38.3,23.3,30.4,33.1,32.5,40.84,36.36,-11.0,Tier 4 — Low Priority / Avoid,General Watchlist,24.0,2.5,21.2
+2026-07-24,MDLZ,"Mondelez International, Inc.",Consumer Defensive,32.4,36.4,20.3,42.7,30.5,33.3,60.46,55.24,-8.6,Tier 4 — Low Priority / Avoid,General Watchlist,20.4,0.0,18.8
+2026-07-24,MPWR,"Monolithic Power Systems, Inc.",Technology,65.0,77.8,46.1,62.2,77.4,61.1,1336.71,534.68,-60.0,Tier 3 — Watchlist Only,General Watchlist,54.2,52.5,56.0
+2026-07-24,MNST,Monster Beverage Corporation,Consumer Defensive,71.5,85.4,49.1,70.8,83.4,69.7,93.76,68.09,-27.4,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",65.0,62.5,64.7
+2026-07-24,MCO,Moody's Corporation,Financial Services,58.9,73.6,45.1,42.9,75.4,56.6,471.62,442.57,-6.2,Tier 4 — Low Priority / Avoid,General Watchlist,48.0,40.0,49.4
+2026-07-24,MS,Morgan Stanley,Financial Services,62.8,71.1,43.2,71.3,69.3,60.0,214.19,208.0,-2.9,Tier 3 — Watchlist Only,General Watchlist,59.2,62.5,58.9
+2026-07-24,MOS,Mosaic Company (The),Basic Materials,17.5,20.3,10.4,24.8,13.5,18.7,22.48,17.31,-23.0,Tier 4 — Low Priority / Avoid,General Watchlist,10.4,0.0,10.0
+2026-07-24,MSI,"Motorola Solutions, Inc.",Technology,40.5,47.8,29.1,36.2,51.1,40.1,409.42,249.49,-39.1,Tier 4 — Low Priority / Avoid,General Watchlist,28.7,2.5,25.8
+2026-07-24,MSCI,MSCI Inc.,Financial Services,50.4,61.8,36.6,42.5,61.9,49.3,555.29,463.15,-16.6,Tier 4 — Low Priority / Avoid,General Watchlist,40.4,40.0,43.2
+2026-07-24,NDAQ,"Nasdaq, Inc.",Financial Services,53.6,63.7,39.6,50.6,61.5,52.8,92.01,93.44,1.6,Tier 4 — Low Priority / Avoid,General Watchlist,41.4,15.0,38.5
+2026-07-24,NTAP,"NetApp, Inc.",Technology,64.7,72.4,45.0,72.4,74.4,61.1,166.22,145.08,-12.7,Tier 3 — Watchlist Only,General Watchlist,55.4,52.5,55.7
