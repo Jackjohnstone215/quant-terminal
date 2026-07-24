@@ -64,6 +64,41 @@ def safe_score(value, good_low, good_high, reverse=False):
     return round(((value - good_low) / (good_high - good_low)) * 100, 1)
 
 
+def sharpe_ratio(ret_pct, volatility_pct, rf_pct=None):
+    """Return earned per unit of risk taken: (annual return − risk-free) / volatility. The single
+    most important number for comparing diversified funds — a 12% return at 25% vol is worse than
+    8% at 10%. Inputs are PERCENTS (12.0, not 0.12). None if volatility is missing/zero."""
+    r = safe_float(ret_pct)
+    v = safe_float(volatility_pct)
+    if r is None or not v or v <= 0:
+        return None
+    rf = safe_float(rf_pct, RISK_FREE_RATE * 100)
+    return round((r - rf) / v, 2)
+
+
+def fund_trend_score(ret_3m, ret_6m, ret_1y, volatility, max_drawdown, expense=None):
+    """Risk-adjusted TREND score (0-100) for a diversified fund/ETF — a bond, gold, REIT, or index
+    fund has no earnings or DCF, so scoring it on P/E or ROIC is meaningless. The honest read for a
+    fund is: is it in an uptrend, how much risk did that take, how deep are its drawdowns, and how
+    cheap is it to own. This is a MOMENTUM/RISK score, NOT a valuation score — use it to see what's
+    working across asset classes, not to call something cheap. All inputs are percents.
+
+    Weights: trend 45% (longer horizons weighted more), risk-adjusted return 30%, drawdown control
+    17%, cost 8%. Missing inputs score a neutral 50 via safe_score, so thin data can't fake a
+    top rank."""
+    mom = (safe_score(ret_3m, -8, 15) * 0.25 +
+           safe_score(ret_6m, -12, 22) * 0.30 +
+           safe_score(ret_1y, -15, 30) * 0.45)
+    r1, vol = safe_float(ret_1y), safe_float(volatility)
+    rar = (r1 / vol) if (r1 is not None and vol and vol > 0) else None
+    rar_s = safe_score(rar, -0.3, 1.2)                       # ~return-per-unit-vol
+    dd = safe_float(max_drawdown)
+    dd_s = safe_score(abs(dd) if dd is not None else None, 8, 40, reverse=True)
+    cost_s = safe_score(expense, 0.03, 0.75, reverse=True) if safe_float(expense) is not None else 50.0
+    score = mom * 0.45 + rar_s * 0.30 + dd_s * 0.17 + cost_s * 0.08
+    return round(clamp(score), 1)
+
+
 def capm_rate(beta):
     """Discount rate from CAPM: risk_free + beta × equity-risk-premium, clamped to a sane
     band. A high-beta stock is discounted harder (worth less), a defensive one less so —

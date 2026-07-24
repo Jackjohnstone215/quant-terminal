@@ -330,7 +330,7 @@ BEARISH_WORDS = ["falls", "drops", "slumps", "misses", "cuts", "downgrade", "wea
 # test_valuation.py). Imported here and re-exported so run_scan.py/audit.py keep working.
 from valuation import (
     RISK_FREE_RATE, EQUITY_RISK_PREMIUM, safe_float, norm_yield_pct,
-    clamp, safe_score,
+    clamp, safe_score, sharpe_ratio, fund_trend_score,
     capm_rate, dcf_from_params, dcf_3stage, sustainable_growth, _dcf_fair_value,
     reverse_dcf_growth, _cost_of_debt, wacc, fcff_wacc_value, monte_carlo_dcf,
     _rate_anchored_multiple, estimate_fair_value,
@@ -7036,6 +7036,115 @@ def watchlist_page():
         st.caption("No upcoming earnings dates available for these tickers right now.")
 
 
+# Curated, liquid ETF universe spanning every asset class the Rebalance page tracks — so the
+# scanner covers the WHOLE portfolio (stocks, international, real estate, bonds, commodities, cash),
+# not just S&P 500 equities. One representative-to-a-few funds per sub-class; all cheap and liquid.
+ALL_ASSET_UNIVERSE = {
+    "US Stocks": [
+        ("VTI", "US total market"), ("VOO", "S&P 500"), ("QQQ", "Nasdaq 100"),
+        ("VTV", "US large value"), ("VUG", "US large growth"), ("SCHD", "US dividend"),
+        ("IWM", "US small cap"),
+    ],
+    "International": [
+        ("VEA", "Developed ex-US"), ("VWO", "Emerging markets"), ("VXUS", "Total intl"),
+    ],
+    "Real Estate": [
+        ("VNQ", "US REITs"), ("SCHH", "US REITs"), ("VNQI", "Intl REITs"),
+    ],
+    "Bonds": [
+        ("BND", "US total bond"), ("AGG", "US aggregate"), ("TLT", "Long Treasuries"),
+        ("IEF", "7-10y Treasuries"), ("SHY", "1-3y Treasuries"), ("TIP", "TIPS (inflation)"),
+        ("LQD", "IG corporate"), ("HYG", "High yield"), ("MUB", "Municipals"),
+    ],
+    "Commodities/Gold": [
+        ("GLD", "Gold"), ("IAU", "Gold"), ("SLV", "Silver"), ("DBC", "Broad commodities"),
+        ("PDBC", "Commodities (no K-1)"),
+    ],
+    "Cash": [
+        ("BIL", "1-3mo T-bills"), ("SGOV", "0-3mo T-bills"),
+    ],
+}
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def scan_all_assets():
+    """Score every fund in the cross-asset universe on RISK-ADJUSTED TREND (not valuation — funds
+    have no earnings/DCF). Returns a DataFrame ranked by score, with the asset class attached so we
+    can pick a leader per class. Cached 6h — it's ~35 Yahoo calls."""
+    rows = []
+    for cls, funds in ALL_ASSET_UNIVERSE.items():
+        for tk, label in funds:
+            try:
+                e = analyze_etf(tk)
+            except Exception:
+                continue
+            if not e.get("Price"):
+                continue
+            score = fund_trend_score(e.get("3M %"), e.get("6M %"), e.get("1Y %"),
+                                     e.get("Volatility %"), e.get("Max Drawdown %"), e.get("Expense Ratio %"))
+            sharpe = sharpe_ratio(e.get("1Y %"), e.get("Volatility %"))
+            rows.append({
+                "Ticker": e["Ticker"], "Asset Class": cls, "Exposure": label,
+                "Score": score, "Sharpe (1y)": sharpe,
+                "1Y %": e.get("1Y %"), "6M %": e.get("6M %"), "3M %": e.get("3M %"),
+                "Yield %": e.get("Yield %"), "Volatility %": e.get("Volatility %"),
+                "Max Drawdown %": e.get("Max Drawdown %"), "Expense %": e.get("Expense Ratio %"),
+            })
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values("Score", ascending=False).reset_index(drop=True)
+    return df
+
+
+def multi_asset_scanner_page():
+    st.title("🌐 All-Asset Scanner")
+    st.caption("The scanner beyond stocks — real estate, bonds, commodities/gold, and international, "
+               "scored on **risk-adjusted trend** (return earned per unit of risk), not valuation. "
+               "Funds have no earnings or fair value; the honest question is *what's working now, and "
+               "at what risk*. Use it to see which asset classes are leading and to pick the best "
+               "vehicle within each. Data: Yahoo Finance (free). Educational, not advice.")
+
+    if st.button("Scan all asset classes", type="primary") or st.session_state.get("mas_ran"):
+        st.session_state["mas_ran"] = True
+        with st.spinner("Scoring ~35 funds across every asset class…"):
+            df = scan_all_assets()
+        if df.empty:
+            st.warning("Couldn't load fund data right now (price source unavailable). Try again shortly.")
+            return
+
+        # What's leading now — one best-in-class pick per asset class, ordered by score.
+        st.subheader("Leaders by asset class")
+        st.caption("The strongest risk-adjusted vehicle in each asset class right now.")
+        best = (df.sort_values("Score", ascending=False)
+                  .groupby("Asset Class", as_index=False).first()
+                  .sort_values("Score", ascending=False))
+        flat = st.columns(min(len(best), 6))
+        for col, (_, r) in zip(flat, best.iterrows()):
+            sc = r["Score"] or 0
+            arrow = "▲" if sc >= 55 else ("▼" if sc < 45 else "—")
+            col.metric(f"{r['Asset Class']}", f"{r['Ticker']}", f"{arrow} score {sc:.0f}")
+        lead = best.iloc[0]
+        lag = best.iloc[-1]
+        st.markdown(f"**Reading the tape:** money is favoring **{lead['Asset Class']}** "
+                    f"(best vehicle {lead['Ticker']}, score {lead['Score']:.0f}) and shunning "
+                    f"**{lag['Asset Class']}** (score {lag['Score']:.0f}). Leadership rotates — this is "
+                    f"a momentum read for tilting *within* your target allocation, not a reason to abandon it.")
+
+        st.divider()
+        st.subheader("Full ranking")
+        show_cls = st.multiselect("Filter asset classes", list(ALL_ASSET_UNIVERSE.keys()),
+                                  default=list(ALL_ASSET_UNIVERSE.keys()))
+        view = df[df["Asset Class"].isin(show_cls)] if show_cls else df
+        st.dataframe(view, width="stretch", hide_index=True)
+        st.caption("**Score** = risk-adjusted trend (0-100): momentum 45% · return-per-unit-risk 30% · "
+                   "drawdown control 17% · cost 8%. **Sharpe (1y)** = (1-yr return − ~4.3% risk-free) ÷ "
+                   "volatility — higher means more return for the risk. Compare returns *alongside* "
+                   "volatility and drawdown, never alone. A high score means strong recent trend, not cheap.")
+    else:
+        st.info("Tap **Scan all asset classes** to rank stocks, real estate, bonds, commodities, and "
+                "international by risk-adjusted trend. Results cache for 6 hours.")
+
+
 def etf_explorer_page():
     st.title("ETF Explorer")
     st.caption("Analyze funds the right way — cost, size, yield, returns, risk, sector mix, and holdings. Data: Yahoo Finance (free).")
@@ -7969,6 +8078,7 @@ NAV_SECTIONS = [
     ]),
     ("Find Ideas", [
         ("🧭 Quant Opportunity Engine", opportunity_engine),
+        ("🌐 All-Asset Scanner", multi_asset_scanner_page),
         ("📋 Research Queue", research_queue_page),
     ]),
     ("Analyze", [

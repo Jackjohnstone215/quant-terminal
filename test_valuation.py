@@ -15,7 +15,7 @@ from valuation import (
     capm_rate, dcf_from_params, dcf_3stage, sustainable_growth,
     reverse_dcf_growth, wacc, fcff_wacc_value, monte_carlo_dcf,
     _rate_anchored_multiple, estimate_fair_value, safe_float, norm_yield_pct,
-    clamp, safe_score,
+    clamp, safe_score, sharpe_ratio, fund_trend_score,
 )
 
 
@@ -258,6 +258,42 @@ def test_safe_score_negative_multiple_maps_to_worst_when_caller_sentinels():
     # values to a large sentinel BEFORE scoring. Confirm the sentinel then scores 0 (reverse).
     sentinel = 999
     assert safe_score(sentinel, 8, 40, reverse=True) == 0.0
+
+
+# ---------- fund / multi-asset scoring (Sharpe, trend score) ----------
+
+def test_sharpe_ratio_basic():
+    # 12% return, 10% vol, 4.3% risk-free -> (12-4.3)/10 = 0.77
+    assert close(sharpe_ratio(12.0, 10.0, 4.3), 0.77, tol=0.01)
+
+
+def test_sharpe_ratio_rewards_lower_risk():
+    # Same return, less volatility -> higher Sharpe.
+    assert sharpe_ratio(8.0, 8.0) > sharpe_ratio(8.0, 20.0)
+
+
+def test_sharpe_ratio_missing_or_zero_vol():
+    assert sharpe_ratio(10.0, 0) is None
+    assert sharpe_ratio(None, 10.0) is None
+
+
+def test_fund_trend_score_uptrend_beats_downtrend():
+    up = fund_trend_score(ret_3m=6, ret_6m=12, ret_1y=22, volatility=14, max_drawdown=-9, expense=0.03)
+    down = fund_trend_score(ret_3m=-6, ret_6m=-12, ret_1y=-18, volatility=30, max_drawdown=-35, expense=0.03)
+    assert 0 <= down < up <= 100
+    assert up >= 70 and down <= 35
+
+
+def test_fund_trend_score_penalizes_risk_for_same_return():
+    calm = fund_trend_score(ret_3m=4, ret_6m=8, ret_1y=15, volatility=8, max_drawdown=-6)
+    wild = fund_trend_score(ret_3m=4, ret_6m=8, ret_1y=15, volatility=35, max_drawdown=-30)
+    assert calm > wild        # same trend, more risk -> lower score
+
+
+def test_fund_trend_score_missing_data_is_neutralish():
+    # All-missing shouldn't peg to 0 or 100 — safe_score neutralizes to ~50.
+    s = fund_trend_score(None, None, None, None, None, None)
+    assert 40 <= s <= 60
 
 
 if __name__ == "__main__":
