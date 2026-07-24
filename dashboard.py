@@ -5154,7 +5154,7 @@ def portfolio_risk_analytics(analysis):
     hhi = float((w ** 2).sum()) if len(w) else 0.0
     eff_n = round(1 / hhi, 1) if hhi > 0 else len(tickers)
 
-    corr, avg_corr = None, None
+    corr, avg_corr, top_pair = None, None, None
     if len(tickers) >= 2:
         price_data = get_price_history(tickers, period="1y")
         rets = {}
@@ -5170,6 +5170,31 @@ def portfolio_risk_analytics(analysis):
                 m = corr.values
                 mask = ~np.eye(len(m), dtype=bool)
                 avg_corr = round(float(m[mask].mean()), 2)
+                # most-correlated (most redundant) pair
+                cm = corr.copy()
+                np.fill_diagonal(cm.values, np.nan)
+                mx = cm.max().max()
+                if mx == mx:  # not NaN
+                    where = cm.stack().idxmax()
+                    top_pair = (where[0], where[1], round(float(mx), 2))
+
+    # Sector concentration: top-sector weight + effective number of sectors (1/HHI of sector wts)
+    top_sector, top_sector_w, eff_sectors = None, None, None
+    if "Sector" in analysis.columns:
+        sw = analysis.groupby("Sector")["Portfolio Weight %"].sum().astype(float) / 100.0
+        sw = sw[sw > 0]
+        if len(sw):
+            top_sector = sw.idxmax()
+            top_sector_w = round(float(sw.max()) * 100, 1)
+            shhi = float((sw ** 2).sum())
+            eff_sectors = round(1 / shhi, 1) if shhi > 0 else len(sw)
+
+    # Composite diversification score (0-100): low correlation + many effective positions +
+    # spread across sectors. Textbook diversification = uncorrelated holdings, not just a big count.
+    corr_pts = clamp(100 - (avg_corr * 120)) if avg_corr is not None else 55
+    breadth_pts = clamp(eff_n / 15.0 * 100)
+    sector_pts = clamp(eff_sectors / 6.0 * 100) if eff_sectors is not None else 50
+    div_score = round(corr_pts * 0.45 + breadth_pts * 0.30 + sector_pts * 0.25)
 
     return {
         "weighted_beta": weighted_beta,
@@ -5177,6 +5202,11 @@ def portfolio_risk_analytics(analysis):
         "n_positions": len(tickers),
         "avg_correlation": avg_corr,
         "corr": corr,
+        "top_pair": top_pair,
+        "top_sector": top_sector,
+        "top_sector_weight": top_sector_w,
+        "effective_sectors": eff_sectors,
+        "diversification_score": div_score,
     }
 
 
@@ -5434,6 +5464,13 @@ def portfolio_manager_page():
             st.subheader("🛡️ Risk & Diversification")
             with st.spinner("Analyzing diversification..."):
                 risk = portfolio_risk_analytics(analysis)
+
+            ds = risk.get("diversification_score")
+            if ds is not None:
+                dlabel = "Well diversified" if ds >= 70 else ("Moderately diversified" if ds >= 45 else "Concentrated / one-bet risk")
+                st.metric("Diversification Score", f"{ds}/100", dlabel)
+                st.caption("Blends how *independently* your holdings move (correlation), how many *effective* positions you really have, and how many sectors you span — not just the raw number of names.")
+
             r1, r2, r3 = st.columns(3)
             wb = risk.get("weighted_beta")
             r1.metric("Portfolio Beta", wb if wb is not None else "N/A",
@@ -5444,6 +5481,21 @@ def portfolio_manager_page():
             ac = risk.get("avg_correlation")
             r3.metric("Avg Correlation", ac if ac is not None else "N/A",
                       help="How similarly your holdings move. Lower = better diversified.")
+
+            # Sector concentration flag
+            ts, tsw = risk.get("top_sector"), risk.get("top_sector_weight")
+            if ts and tsw is not None:
+                if tsw >= 40:
+                    st.warning(f"⚠️ Sector concentration: **{tsw:.0f}%** in {ts} (~{risk.get('effective_sectors')} effective sectors). A single-sector shock would hit hard — that's one bet, not a diversified book.")
+                elif tsw >= 30:
+                    st.info(f"Heaviest sector: **{ts} at {tsw:.0f}%** (~{risk.get('effective_sectors')} effective sectors). Watch that it doesn't creep higher.")
+                else:
+                    st.caption(f"Sector spread looks healthy — heaviest is {ts} at {tsw:.0f}% (~{risk.get('effective_sectors')} effective sectors).")
+
+            # Redundancy callout — the single most-overlapping pair
+            tp = risk.get("top_pair")
+            if tp and tp[2] is not None and tp[2] >= 0.75:
+                st.caption(f"🔁 Most overlapping holdings: **{tp[0]} & {tp[1]}** move together {tp[2]:.0%} of the time — owning both adds little diversification; one high-conviction pick may do.")
 
             if wb is not None:
                 st.caption(f"Beta {wb}: your portfolio {'amplifies' if wb > 1.05 else 'dampens' if wb < 0.95 else 'tracks'} market moves.")
