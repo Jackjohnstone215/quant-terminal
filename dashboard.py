@@ -1088,16 +1088,21 @@ def dcf_3stage(fcf_ps, g_high, r, g_term=0.025, high_years=5, fade_years=5):
 def sustainable_growth(roe, payout):
     """Fundamental (self-funded) growth = retention × ROE = (1 − payout) × ROE. Damodaran's
     core discipline: a firm can't grow faster than its reinvestment and returns allow.
-    roe/payout are fractions. Returns None if ROE unavailable."""
+
+    `payout` should be the TOTAL shareholder payout (dividends + net buybacks) / net income,
+    not the dividend-only ratio — a firm returning 90% of earnings via buybacks retains
+    almost nothing to reinvest, even if its dividend payout reads 0%. Total payout above
+    100% (returning more than it earns) is allowed and yields negative retention → negative
+    sustainable growth, which is the honest read. roe/payout are fractions. None if no ROE."""
     roe = safe_float(roe)
     if roe is None:
         return None
     payout = safe_float(payout, 0.0)
-    payout = min(max(payout if payout is not None else 0.0, 0.0), 1.0)
+    payout = min(max(payout if payout is not None else 0.0, 0.0), 1.5)
     return roe * (1 - payout)
 
 
-def _dcf_fair_value(fcf_ps, growth_rate, risk_score, beta=None, roe=None, payout=None):
+def _dcf_fair_value(fcf_ps, growth_rate, beta=None, roe=None, payout=None):
     """Engine DCF: CAPM discount rate + 3-stage growth, with stage-1 growth ANCHORED to
     sustainable growth (retention × ROE) so we never assume more growth than the business
     can fund. Terminal growth capped at the risk-free rate. None if no positive FCF."""
@@ -7642,6 +7647,72 @@ def compare_page():
             st.caption(f"Scored live (not in last saved scan): {', '.join(map(str, live))}")
 
 
+# Curated multi-asset building blocks — the low-cost ETFs that cover the major asset classes a
+# diversified long-term portfolio is built from. Broadens the app beyond US large-cap stocks.
+ASSET_CLASSES = [
+    ("🇺🇸", "US Large Cap", "VOO", "The core US market (S&P 500) — your baseline equity holding."),
+    ("🔎", "US Small / Mid Cap", "VB", "Smaller US companies — higher risk, historically higher long-run returns."),
+    ("🌍", "International Developed", "VEA", "Europe, Japan & other developed markets — diversifies away from US-only risk."),
+    ("📈", "Emerging Markets", "VWO", "Faster-growing economies (India, China, …) — higher risk, cheaper valuations."),
+    ("🏠", "Real Estate (REITs)", "VNQ", "Property income + inflation hedge, with low correlation to stocks."),
+    ("🛡️", "US Bonds (Aggregate)", "BND", "Ballast — cushions equity drawdowns and pays steady income."),
+    ("💵", "Inflation-Protected (TIPS)", "SCHP", "Protects purchasing power when inflation runs hot."),
+    ("🥇", "Gold / Commodities", "GLD", "Crisis & inflation hedge that moves independently of stocks and bonds."),
+    ("💰", "Dividend Growth", "VIG", "Quality companies that consistently grow dividends — steadier equity exposure."),
+]
+
+# Illustrative core allocations by risk appetite (EDUCATIONAL templates, not advice). Weights %.
+CORE_ALLOCATIONS = {
+    "Aggressive (long horizon)": {"US Large Cap": 45, "US Small / Mid Cap": 10, "International Developed": 15,
+                                  "Emerging Markets": 10, "Real Estate (REITs)": 10, "Dividend Growth": 10},
+    "Balanced": {"US Large Cap": 35, "International Developed": 12, "Real Estate (REITs)": 10,
+                 "US Bonds (Aggregate)": 28, "Gold / Commodities": 8, "Emerging Markets": 7},
+    "Conservative": {"US Large Cap": 22, "International Developed": 8, "Real Estate (REITs)": 8,
+                     "US Bonds (Aggregate)": 45, "Inflation-Protected (TIPS)": 12, "Gold / Commodities": 5},
+}
+
+
+def building_blocks_page():
+    st.title("🧱 Building Blocks")
+    st.caption("The major asset classes a diversified portfolio is built from — each via a low-cost ETF you can analyze, watch, and hold. Growing wealth isn't risk-*free*; it's risk-*managed* — spreading across these so no single shock sinks you.")
+
+    st.subheader("The asset-class menu")
+    st.dataframe(
+        pd.DataFrame([{"": ic, "Asset class": nm, "ETF": tk, "Role in a portfolio": role}
+                      for ic, nm, tk, role in ASSET_CLASSES]),
+        width="stretch", hide_index=True)
+    st.caption("Add any of these tickers on **My Watchlist** to track them, or run one through **ETF Explorer** for full detail.")
+
+    if st.button("📊 Load live comparison (yield, cost, return, risk)", type="primary") or st.session_state.get("bb_live"):
+        st.session_state["bb_live"] = True
+        rows = []
+        with st.spinner("Fetching asset-class ETF stats…"):
+            for ic, nm, tk, _ in ASSET_CLASSES:
+                try:
+                    e = analyze_etf(tk)
+                except Exception:
+                    e = None
+                if e:
+                    rows.append({"Asset class": f"{ic} {nm}", "ETF": tk,
+                                 "Yield %": e.get("Yield %"), "Expense %": e.get("Expense Ratio %"),
+                                 "YTD %": e.get("YTD %"), "Volatility %": e.get("Volatility %"),
+                                 "Max Drawdown %": e.get("Max Drawdown %")})
+        if rows:
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            st.caption("Note how bonds/gold/real estate show lower volatility and different drawdowns than equities — that's the diversification you're buying.")
+    else:
+        st.caption("📊 Tap to pull each ETF's live yield, cost, return, and risk (kept off auto-load so the page opens instantly).")
+
+    st.divider()
+    st.subheader("Illustrative diversified cores")
+    st.caption("Templates for how the blocks combine at different risk levels — **educational, not personalized advice.** A longer horizon supports more equities; nearer a goal, more bonds.")
+    alloc_df = pd.DataFrame(CORE_ALLOCATIONS).fillna(0).astype(int)
+    alloc_df.index.name = "Asset class"
+    st.dataframe(alloc_df, width="stretch")
+    st.caption("These are the building blocks the **Portfolio → Diversification Score** measures. Your own long-term forecast (Market Command Center) currently reads US large-cap as expensive — a reason to make sure international, real estate, and value/dividend blocks are represented, not just the S&P 500.")
+    st.caption("Educational framing built on public/textbook portfolio theory — not personalized financial advice. Your right mix depends on your goals, horizon, and risk tolerance.")
+
+
 # Grouped navigation: pages organized by workflow (find → analyze → build → learn), each with a
 # consistent icon. Button-based so it reads as a real nav and stays fully headless-testable.
 NAV_SECTIONS = [
@@ -7662,6 +7733,7 @@ NAV_SECTIONS = [
         ("📓 Research Journal", research_journal_page),
     ]),
     ("Portfolio", [
+        ("🧱 Building Blocks", building_blocks_page),
         ("💼 Portfolio Manager AI", portfolio_manager_page),
         ("📐 Position Sizer", position_sizer_page),
         ("🧪 Paper Trading", paper_trading_page),
