@@ -36,6 +36,34 @@ def norm_yield_pct(value):
     return round(value, 2) if as_pct > 25 else round(as_pct, 2)
 
 
+def clamp(value, low=0, high=100):
+    """Pin a value into [low, high]; non-numeric input falls back to a neutral 50 first."""
+    value = safe_float(value, 50)
+    return max(low, min(high, value))
+
+
+def safe_score(value, good_low, good_high, reverse=False):
+    """Map a raw metric to a 0-100 score by linear interpolation between good_low and good_high.
+    Missing data returns a neutral 50 (never a false 0 or 100). `reverse=True` for metrics where
+    LOWER is better (P/E, leverage): good_low scores 100, good_high scores 0. Callers that must
+    penalize a nonsensical input (e.g. a NEGATIVE EV/FCF, which is 'cheapest' numerically but
+    actually worst) map it to the bad end BEFORE calling — this function only interpolates."""
+    value = safe_float(value)
+    if value is None:
+        return 50.0
+    if reverse:
+        if value <= good_low:
+            return 100.0
+        if value >= good_high:
+            return 0.0
+        return round(100 - ((value - good_low) / (good_high - good_low)) * 100, 1)
+    if value <= good_low:
+        return 0.0
+    if value >= good_high:
+        return 100.0
+    return round(((value - good_low) / (good_high - good_low)) * 100, 1)
+
+
 def capm_rate(beta):
     """Discount rate from CAPM: risk_free + beta × equity-risk-premium, clamped to a sane
     band. A high-beta stock is discounted harder (worth less), a defensive one less so —

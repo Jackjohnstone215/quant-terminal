@@ -15,6 +15,7 @@ from valuation import (
     capm_rate, dcf_from_params, dcf_3stage, sustainable_growth,
     reverse_dcf_growth, wacc, fcff_wacc_value, monte_carlo_dcf,
     _rate_anchored_multiple, estimate_fair_value, safe_float, norm_yield_pct,
+    clamp, safe_score,
 )
 
 
@@ -221,6 +222,42 @@ def test_safe_float():
 def test_norm_yield_pct():
     assert close(norm_yield_pct(0.0234), 2.34)   # fraction -> percent
     assert close(norm_yield_pct(6.45), 6.45)     # already percent
+
+
+# ---------- scoring primitives (clamp, safe_score) ----------
+
+def test_clamp_bounds_and_default():
+    assert clamp(150) == 100 and clamp(-20) == 0 and clamp(63) == 63
+    assert clamp(None) == 50            # missing -> neutral, not 0
+    assert clamp(1.5, 0, 1) == 1.0
+
+
+def test_safe_score_missing_is_neutral():
+    # Missing data must NOT read as a perfect or terrible score — it's a neutral 50.
+    assert safe_score(None, 0.05, 0.20) == 50.0
+
+
+def test_safe_score_linear_and_bounds():
+    assert safe_score(0.05, 0.05, 0.25) == 0.0        # at/below floor
+    assert safe_score(0.25, 0.05, 0.25) == 100.0      # at/above ceiling
+    assert close(safe_score(0.15, 0.05, 0.25), 50.0)  # midpoint
+    assert safe_score(0.30, 0.05, 0.25) == 100.0      # clamps above ceiling
+
+
+def test_safe_score_reverse_lower_is_better():
+    # For P/E-like metrics, lower scores higher.
+    assert safe_score(8, 8, 40, reverse=True) == 100.0
+    assert safe_score(40, 8, 40, reverse=True) == 0.0
+    assert safe_score(24, 8, 40, reverse=True) == 50.0
+    # Monotonically decreasing as the metric worsens.
+    assert safe_score(12, 8, 40, reverse=True) > safe_score(30, 8, 40, reverse=True)
+
+
+def test_safe_score_negative_multiple_maps_to_worst_when_caller_sentinels():
+    # A negative EV/FCF is numerically "cheapest" but really the worst; the engine maps such
+    # values to a large sentinel BEFORE scoring. Confirm the sentinel then scores 0 (reverse).
+    sentinel = 999
+    assert safe_score(sentinel, 8, 40, reverse=True) == 0.0
 
 
 if __name__ == "__main__":

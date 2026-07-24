@@ -330,32 +330,11 @@ BEARISH_WORDS = ["falls", "drops", "slumps", "misses", "cuts", "downgrade", "wea
 # test_valuation.py). Imported here and re-exported so run_scan.py/audit.py keep working.
 from valuation import (
     RISK_FREE_RATE, EQUITY_RISK_PREMIUM, safe_float, norm_yield_pct,
+    clamp, safe_score,
     capm_rate, dcf_from_params, dcf_3stage, sustainable_growth, _dcf_fair_value,
     reverse_dcf_growth, _cost_of_debt, wacc, fcff_wacc_value, monte_carlo_dcf,
     _rate_anchored_multiple, estimate_fair_value,
 )
-
-
-def clamp(value, low=0, high=100):
-    value = safe_float(value, 50)
-    return max(low, min(high, value))
-
-
-def safe_score(value, good_low, good_high, reverse=False):
-    value = safe_float(value)
-    if value is None:
-        return 50.0
-    if reverse:
-        if value <= good_low:
-            return 100.0
-        if value >= good_high:
-            return 0.0
-        return round(100 - ((value - good_low) / (good_high - good_low)) * 100, 1)
-    if value <= good_low:
-        return 0.0
-    if value >= good_high:
-        return 100.0
-    return round(((value - good_low) / (good_high - good_low)) * 100, 1)
 
 
 def grade(score):
