@@ -4796,6 +4796,24 @@ def save_watchlist(tickers):
     return clean
 
 
+# One-click starter lists for long-horizon themes. Adding merges into the saved
+# watchlist (Supabase when signed in, local file/URL otherwise) — never duplicates.
+THEME_WATCHLISTS = {
+    "⚡ Energy Abundance": {
+        "tickers": ["GEV", "VRT", "CEG", "PWR", "CCJ", "VST", "OKLO", "SMR"],
+        "blurb": ("AI data-center power demand today; cheap, abundant electricity as the "
+                  "long-run unlock. Compounders: GEV, VRT, PWR · Cyclical/turnaround: CEG, "
+                  "VST, CCJ · Speculative pre-revenue: OKLO, SMR."),
+    },
+    "🧬 Engineered Biology": {
+        "tickers": ["TMO", "DHR", "VRTX", "ILMN", "TWST", "CRSP", "RXRX", "SDGR"],
+        "blurb": ("Picks-and-shovels that get paid whether any one drug works, plus AI-bio "
+                  "platforms. Compounders: TMO, DHR, VRTX · Read/write layer: ILMN, TWST · "
+                  "Speculative: CRSP, RXRX, SDGR."),
+    },
+}
+
+
 # Structured thesis record. New fields are backward-compatible: load_journal() backfills any
 # column an older stored entry is missing, so pre-upgrade CSV/Supabase rows still load cleanly.
 JOURNAL_COLS = ["Ticker", "My Rating", "Conviction", "My Target", "Entry Price",
@@ -7031,6 +7049,23 @@ def watchlist_page():
             if restore and st.button("Restore"):
                 save_watchlist([x.strip().upper() for x in restore.replace(";", ",").split(",") if x.strip()])
                 st.rerun()
+
+    with st.expander("🧭 Theme watchlists — long-horizon starter lists"):
+        st.caption("Curated starter baskets for multi-year themes. One click merges a theme's "
+                   "names into your watchlist; names you already track are skipped.")
+        for theme, spec in THEME_WATCHLISTS.items():
+            missing = [t for t in spec["tickers"] if t not in tickers]
+            c1, c2 = st.columns([4, 1])
+            with c1:
+                st.markdown(f"**{theme}** — {', '.join(spec['tickers'])}")
+                st.caption(spec["blurb"])
+            with c2:
+                if missing:
+                    if st.button(f"➕ Add {len(missing)}", key=f"theme_add_{theme}", width="stretch"):
+                        tickers = save_watchlist(tickers + missing)
+                        st.rerun()
+                else:
+                    st.caption("✅ all added")
 
     if not tickers:
         st.info("Your watchlist is empty. Add a few tickers above to start tracking them.")
