@@ -15,7 +15,7 @@ from valuation import (
     capm_rate, dcf_from_params, dcf_3stage, sustainable_growth,
     reverse_dcf_growth, wacc, fcff_wacc_value, monte_carlo_dcf,
     _rate_anchored_multiple, estimate_fair_value, safe_float, norm_yield_pct,
-    clamp, safe_score, sharpe_ratio, fund_trend_score,
+    clamp, safe_score, sharpe_ratio, fund_trend_score, ffo_per_share, reit_score,
 )
 
 
@@ -278,8 +278,10 @@ def test_sharpe_ratio_missing_or_zero_vol():
 
 
 def test_fund_trend_score_uptrend_beats_downtrend():
-    up = fund_trend_score(ret_3m=6, ret_6m=12, ret_1y=22, volatility=14, max_drawdown=-9, expense=0.03)
-    down = fund_trend_score(ret_3m=-6, ret_6m=-12, ret_1y=-18, volatility=30, max_drawdown=-35, expense=0.03)
+    up = fund_trend_score(ret_3m=6, ret_6m=12, ret_1y=22, volatility=14, max_drawdown=-9,
+                          expense=0.03, pct_vs_200dma=8)
+    down = fund_trend_score(ret_3m=-6, ret_6m=-12, ret_1y=-18, volatility=30, max_drawdown=-35,
+                            expense=0.03, pct_vs_200dma=-12)
     assert 0 <= down < up <= 100
     assert up >= 70 and down <= 35
 
@@ -290,10 +292,46 @@ def test_fund_trend_score_penalizes_risk_for_same_return():
     assert calm > wild        # same trend, more risk -> lower score
 
 
+def test_fund_trend_score_200dma_matters():
+    # Same returns/risk, but one is above its 200-day MA (uptrend) and one below (broken trend).
+    above = fund_trend_score(ret_3m=3, ret_6m=6, ret_1y=10, volatility=15, max_drawdown=-12, pct_vs_200dma=9)
+    below = fund_trend_score(ret_3m=3, ret_6m=6, ret_1y=10, volatility=15, max_drawdown=-12, pct_vs_200dma=-9)
+    assert above > below
+
+
 def test_fund_trend_score_missing_data_is_neutralish():
     # All-missing shouldn't peg to 0 or 100 — safe_score neutralizes to ~50.
     s = fund_trend_score(None, None, None, None, None, None)
     assert 40 <= s <= 60
+
+
+# ---------- REIT scoring (FFO-based) ----------
+
+def test_ffo_per_share_adds_back_depreciation():
+    # NI 1.0B + D&A 2.5B over 0.93B shares -> ~3.76 FFO/share (vs a tiny EPS from NI alone).
+    assert close(ffo_per_share(1.0e9, 2.5e9, 0.93e9), (1.0e9 + 2.5e9) / 0.93e9, tol=1e-6)
+
+
+def test_ffo_per_share_missing_inputs():
+    assert ffo_per_share(None, 2e9, 1e9) is None
+    assert ffo_per_share(1e9, 2e9, 0) is None
+
+
+def test_reit_score_cheaper_pffo_scores_higher():
+    cheap = reit_score(p_ffo=13, ffo_payout_pct=70, div_yield_pct=5, ffo_growth_pct=4)
+    rich = reit_score(p_ffo=24, ffo_payout_pct=70, div_yield_pct=3, ffo_growth_pct=4)
+    assert cheap > rich
+
+
+def test_reit_score_penalizes_unsafe_payout():
+    safe = reit_score(p_ffo=16, ffo_payout_pct=72, div_yield_pct=5)
+    stretched = reit_score(p_ffo=16, ffo_payout_pct=108, div_yield_pct=5)
+    assert safe > stretched        # paying out >100% of FFO is a red flag
+
+
+def test_reit_score_missing_is_bounded():
+    s = reit_score(None, None, None, None)
+    assert 0 <= s <= 100 and 40 <= s <= 60
 
 
 if __name__ == "__main__":

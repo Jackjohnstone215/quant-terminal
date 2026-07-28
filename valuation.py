@@ -76,27 +76,62 @@ def sharpe_ratio(ret_pct, volatility_pct, rf_pct=None):
     return round((r - rf) / v, 2)
 
 
-def fund_trend_score(ret_3m, ret_6m, ret_1y, volatility, max_drawdown, expense=None):
+def fund_trend_score(ret_3m, ret_6m, ret_1y, volatility, max_drawdown, expense=None, pct_vs_200dma=None):
     """Risk-adjusted TREND score (0-100) for a diversified fund/ETF — a bond, gold, REIT, or index
     fund has no earnings or DCF, so scoring it on P/E or ROIC is meaningless. The honest read for a
     fund is: is it in an uptrend, how much risk did that take, how deep are its drawdowns, and how
     cheap is it to own. This is a MOMENTUM/RISK score, NOT a valuation score — use it to see what's
     working across asset classes, not to call something cheap. All inputs are percents.
 
-    Weights: trend 45% (longer horizons weighted more), risk-adjusted return 30%, drawdown control
-    17%, cost 8%. Missing inputs score a neutral 50 via safe_score, so thin data can't fake a
-    top rank."""
-    mom = (safe_score(ret_3m, -8, 15) * 0.25 +
-           safe_score(ret_6m, -12, 22) * 0.30 +
-           safe_score(ret_1y, -15, 30) * 0.45)
+    Trend (45%) blends return-momentum (70%) with position vs the 200-day moving average (30%) —
+    trading above the 200DMA is the most widely-followed signal of a long-term uptrend; below it
+    flags a broken trend even if recent returns look ok. Then risk-adjusted return 30%, drawdown
+    control 17%, cost 8%. Missing inputs score a neutral 50 via safe_score, so thin data can't
+    fake a top rank."""
+    ret_mom = (safe_score(ret_3m, -8, 15) * 0.25 +
+               safe_score(ret_6m, -12, 22) * 0.30 +
+               safe_score(ret_1y, -15, 30) * 0.45)
+    ma_s = safe_score(pct_vs_200dma, -10, 10) if safe_float(pct_vs_200dma) is not None else 50.0
+    trend = ret_mom * 0.70 + ma_s * 0.30
     r1, vol = safe_float(ret_1y), safe_float(volatility)
     rar = (r1 / vol) if (r1 is not None and vol and vol > 0) else None
     rar_s = safe_score(rar, -0.3, 1.2)                       # ~return-per-unit-vol
     dd = safe_float(max_drawdown)
     dd_s = safe_score(abs(dd) if dd is not None else None, 8, 40, reverse=True)
     cost_s = safe_score(expense, 0.03, 0.75, reverse=True) if safe_float(expense) is not None else 50.0
-    score = mom * 0.45 + rar_s * 0.30 + dd_s * 0.17 + cost_s * 0.08
+    score = trend * 0.45 + rar_s * 0.30 + dd_s * 0.17 + cost_s * 0.08
     return round(clamp(score), 1)
+
+
+def ffo_per_share(net_income, d_and_a, shares):
+    """Funds From Operations per share ≈ (net income + real-estate depreciation & amortization) /
+    shares. THE earnings metric for REITs: GAAP net income is crushed by huge non-cash property
+    depreciation, so a REIT's P/E looks absurdly high (Realty Income ~54x) while its P/FFO is
+    normal (~17x). Adding D&A back gives the cash-generation picture that actually matters. None
+    if inputs are missing/zero."""
+    ni, da, sh = safe_float(net_income), safe_float(d_and_a), safe_float(shares)
+    if ni is None or da is None or not sh or sh <= 0:
+        return None
+    return (ni + da) / sh
+
+
+def reit_score(p_ffo, ffo_payout_pct, div_yield_pct, ffo_growth_pct=None):
+    """Quality-and-value score (0-100) for an individual REIT, using REIT-appropriate yardsticks
+    instead of the equity engine's P/E / margins (which misread REITs). Inputs are already-computed
+    numbers, so this stays pure and testable.
+
+    - Valuation 35%: P/FFO, reverse-scored on a REIT-normal band (~12x cheap → ~25x rich).
+    - Dividend safety 25%: FFO payout ratio, reverse-scored — comfortably covered under ~80%, a
+      red flag above 100% (paying out more FFO than it earns).
+    - Income 20%: dividend yield, rewarded up to a point (a very high yield usually signals the
+      market pricing in distress, so the band tops out ~6%).
+    - FFO/share growth 20%: the engine of REIT total return; neutral 50 if unavailable.
+    Missing inputs neutralize to 50 via safe_score."""
+    val = safe_score(p_ffo, 12, 25, reverse=True)
+    safety = safe_score(ffo_payout_pct, 80, 110, reverse=True)
+    income = safe_score(div_yield_pct, 2, 6)
+    growth = safe_score(ffo_growth_pct, -3, 8) if safe_float(ffo_growth_pct) is not None else 50.0
+    return round(clamp(val * 0.35 + safety * 0.25 + income * 0.20 + growth * 0.20), 1)
 
 
 def capm_rate(beta):

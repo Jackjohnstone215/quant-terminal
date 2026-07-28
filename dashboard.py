@@ -330,7 +330,7 @@ BEARISH_WORDS = ["falls", "drops", "slumps", "misses", "cuts", "downgrade", "wea
 # test_valuation.py). Imported here and re-exported so run_scan.py/audit.py keep working.
 from valuation import (
     RISK_FREE_RATE, EQUITY_RISK_PREMIUM, safe_float, norm_yield_pct,
-    clamp, safe_score, sharpe_ratio, fund_trend_score,
+    clamp, safe_score, sharpe_ratio, fund_trend_score, ffo_per_share, reit_score,
     capm_rate, dcf_from_params, dcf_3stage, sustainable_growth, _dcf_fair_value,
     reverse_dcf_growth, _cost_of_debt, wacc, fcff_wacc_value, monte_carlo_dcf,
     _rate_anchored_multiple, estimate_fair_value,
@@ -1107,6 +1107,14 @@ def analyze_etf(ticker):
         rh = window.cummax()
         mdd = round(safe_float((window / rh - 1).min(), 0) * 100, 1)
 
+    # Position vs the 200-day moving average — the most widely-followed long-term-trend gauge.
+    # Above the line = long-term uptrend; below = broken trend. Percent distance, not just a flag.
+    pct_200dma = None
+    if len(hist) >= 200 and price:
+        ma200 = safe_float(hist["Close"].tail(200).mean())
+        if ma200:
+            pct_200dma = round((price / ma200 - 1) * 100, 1)
+
     sectors, holdings, family = {}, None, None
     category = info.get("category")
     try:
@@ -1143,6 +1151,7 @@ def analyze_etf(ticker):
         "5Y Ann %": _norm_pct(info.get("fiveYearAverageReturn")),
         "Volatility %": vol,
         "Max Drawdown %": mdd,
+        "% vs 200DMA": pct_200dma,
         "Sector Weightings": sectors,
         "Top Holdings": holdings,
     }
@@ -7081,11 +7090,12 @@ def scan_all_assets():
             if not e.get("Price"):
                 continue
             score = fund_trend_score(e.get("3M %"), e.get("6M %"), e.get("1Y %"),
-                                     e.get("Volatility %"), e.get("Max Drawdown %"), e.get("Expense Ratio %"))
+                                     e.get("Volatility %"), e.get("Max Drawdown %"),
+                                     e.get("Expense Ratio %"), e.get("% vs 200DMA"))
             sharpe = sharpe_ratio(e.get("1Y %"), e.get("Volatility %"))
             rows.append({
                 "Ticker": e["Ticker"], "Asset Class": cls, "Exposure": label,
-                "Score": score, "Sharpe (1y)": sharpe,
+                "Score": score, "Sharpe (1y)": sharpe, "vs 200DMA %": e.get("% vs 200DMA"),
                 "1Y %": e.get("1Y %"), "6M %": e.get("6M %"), "3M %": e.get("3M %"),
                 "Yield %": e.get("Yield %"), "Volatility %": e.get("Volatility %"),
                 "Max Drawdown %": e.get("Max Drawdown %"), "Expense %": e.get("Expense Ratio %"),
@@ -7096,53 +7106,163 @@ def scan_all_assets():
     return df
 
 
+# Curated liquid REITs by property type. REITs trade like stocks but must be valued on FFO
+# (funds from operations = net income + property depreciation), not P/E — GAAP earnings are
+# gutted by non-cash depreciation, so their P/E looks absurd while P/FFO is normal.
+REIT_UNIVERSE = {
+    "Net lease / retail": [("O", "Realty Income"), ("WPC", "W.P. Carey"), ("VICI", "VICI Properties"),
+                           ("NNN", "NNN REIT"), ("SPG", "Simon Property")],
+    "Industrial / logistics": [("PLD", "Prologis"), ("EXR", "Extra Space"), ("PSA", "Public Storage")],
+    "Data centers / towers": [("AMT", "American Tower"), ("CCI", "Crown Castle"),
+                              ("EQIX", "Equinix"), ("DLR", "Digital Realty")],
+    "Healthcare": [("WELL", "Welltower"), ("VTR", "Ventas"), ("OHI", "Omega Healthcare")],
+    "Residential": [("AVB", "AvalonBay"), ("EQR", "Equity Residential"), ("INVH", "Invitation Homes")],
+}
+
+
+@st.cache_data(ttl=12 * 3600, show_spinner=False)
+def reit_metrics(ticker):
+    """REIT fundamentals the RIGHT way: FFO (net income + D&A), P/FFO, FFO payout, yield, and a
+    REIT-appropriate score — instead of the misleading P/E the equity engine would use. Best-effort
+    over Yahoo's statements; returns a dict with None where data is missing. Cached 12h."""
+    out = {"Ticker": ticker.upper(), "Name": ticker.upper(), "Price": None, "P/FFO": None,
+           "FFO/sh": None, "FFO Payout %": None, "Yield %": None, "FFO Growth %": None,
+           "Debt/Equity": None, "Score": None}
+    try:
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+        out["Name"] = info.get("shortName") or ticker.upper()
+        price = safe_float(info.get("currentPrice")) or safe_float(info.get("regularMarketPrice"))
+        shares = safe_float(info.get("sharesOutstanding"))
+        out["Price"] = round(price, 2) if price else None
+        out["Yield %"] = norm_yield_pct(info.get("dividendYield"))
+        out["Debt/Equity"] = safe_float(info.get("debtToEquity"))
+        dps = safe_float(info.get("dividendRate")) or safe_float(info.get("trailingAnnualDividendRate"))
+
+        inc, cf = t.income_stmt, t.cashflow
+
+        def _row(df, names):
+            if df is None or getattr(df, "empty", True):
+                return []
+            for n in names:
+                if n in df.index:
+                    return [safe_float(v) for v in df.loc[n].values]
+            return []
+
+        ni = _row(inc, ["Net Income", "Net Income From Continuing Operations"])
+        da = _row(cf, ["Depreciation And Amortization", "Depreciation Amortization Depletion"])
+
+        ffo_ps = ffo_per_share(ni[0] if ni else None, da[0] if da else None, shares)
+        out["FFO/sh"] = round(ffo_ps, 2) if ffo_ps else None
+        if ffo_ps and price:
+            out["P/FFO"] = round(price / ffo_ps, 1)
+        if ffo_ps and dps:
+            out["FFO Payout %"] = round(dps / ffo_ps * 100, 1)
+        # FFO/share growth vs the prior year, if two years are available.
+        if len(ni) > 1 and len(da) > 1 and shares:
+            prev = ffo_per_share(ni[1], da[1], shares)
+            if prev and ffo_ps:
+                out["FFO Growth %"] = round((ffo_ps / prev - 1) * 100, 1)
+
+        out["Score"] = reit_score(out["P/FFO"], out["FFO Payout %"], out["Yield %"], out["FFO Growth %"])
+    except Exception:
+        pass
+    return out
+
+
+@st.cache_data(ttl=12 * 3600, show_spinner=False)
+def scan_reits():
+    """Score the curated REIT universe on FFO fundamentals. Returns a DataFrame ranked by score
+    with the property type attached. Cached 12h."""
+    rows = []
+    for ptype, reits in REIT_UNIVERSE.items():
+        for tk, nm in reits:
+            m = reit_metrics(tk)
+            if not m.get("Price"):
+                continue
+            m["Property Type"] = ptype
+            rows.append(m)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        cols = ["Ticker", "Name", "Property Type", "Score", "P/FFO", "Yield %",
+                "FFO Payout %", "FFO Growth %", "Debt/Equity", "Price"]
+        df = df[[c for c in cols if c in df.columns]].sort_values("Score", ascending=False).reset_index(drop=True)
+    return df
+
+
 def multi_asset_scanner_page():
     st.title("🌐 All-Asset Scanner")
-    st.caption("The scanner beyond stocks — real estate, bonds, commodities/gold, and international, "
-               "scored on **risk-adjusted trend** (return earned per unit of risk), not valuation. "
-               "Funds have no earnings or fair value; the honest question is *what's working now, and "
-               "at what risk*. Use it to see which asset classes are leading and to pick the best "
-               "vehicle within each. Data: Yahoo Finance (free). Educational, not advice.")
+    st.caption("The scanner beyond individual stocks — asset-class ETFs scored on **risk-adjusted "
+               "trend**, and individual **REITs** scored on **FFO fundamentals** (the right way to "
+               "value real estate). Data: Yahoo Finance (free). Educational, not advice.")
 
-    if st.button("Scan all asset classes", type="primary") or st.session_state.get("mas_ran"):
-        st.session_state["mas_ran"] = True
-        with st.spinner("Scoring ~35 funds across every asset class…"):
-            df = scan_all_assets()
-        if df.empty:
-            st.warning("Couldn't load fund data right now (price source unavailable). Try again shortly.")
-            return
+    tab_assets, tab_reits = st.tabs(["🌐 Asset classes", "🏢 Individual REITs"])
 
-        # What's leading now — one best-in-class pick per asset class, ordered by score.
-        st.subheader("Leaders by asset class")
-        st.caption("The strongest risk-adjusted vehicle in each asset class right now.")
-        best = (df.sort_values("Score", ascending=False)
-                  .groupby("Asset Class", as_index=False).first()
-                  .sort_values("Score", ascending=False))
-        flat = st.columns(min(len(best), 6))
-        for col, (_, r) in zip(flat, best.iterrows()):
-            sc = r["Score"] or 0
-            arrow = "▲" if sc >= 55 else ("▼" if sc < 45 else "—")
-            col.metric(f"{r['Asset Class']}", f"{r['Ticker']}", f"{arrow} score {sc:.0f}")
-        lead = best.iloc[0]
-        lag = best.iloc[-1]
-        st.markdown(f"**Reading the tape:** money is favoring **{lead['Asset Class']}** "
-                    f"(best vehicle {lead['Ticker']}, score {lead['Score']:.0f}) and shunning "
-                    f"**{lag['Asset Class']}** (score {lag['Score']:.0f}). Leadership rotates — this is "
-                    f"a momentum read for tilting *within* your target allocation, not a reason to abandon it.")
+    with tab_assets:
+        st.caption("Real estate, bonds, commodities/gold, and international ETFs, scored on risk-"
+                   "adjusted trend (return per unit of risk), not valuation — funds have no fair "
+                   "value. See which classes are leading and pick the best vehicle within each.")
+        if st.button("Scan all asset classes", type="primary") or st.session_state.get("mas_ran"):
+            st.session_state["mas_ran"] = True
+            with st.spinner("Scoring ~35 funds across every asset class…"):
+                df = scan_all_assets()
+            if df.empty:
+                st.warning("Couldn't load fund data right now (price source unavailable). Try again shortly.")
+            else:
+                # What's leading now — one best-in-class pick per asset class, ordered by score.
+                st.subheader("Leaders by asset class")
+                st.caption("The strongest risk-adjusted vehicle in each asset class right now.")
+                best = (df.sort_values("Score", ascending=False)
+                          .groupby("Asset Class", as_index=False).first()
+                          .sort_values("Score", ascending=False))
+                flat = st.columns(min(len(best), 6))
+                for col, (_, r) in zip(flat, best.iterrows()):
+                    sc = r["Score"] or 0
+                    arrow = "▲" if sc >= 55 else ("▼" if sc < 45 else "—")
+                    col.metric(f"{r['Asset Class']}", f"{r['Ticker']}", f"{arrow} score {sc:.0f}")
+                lead, lag = best.iloc[0], best.iloc[-1]
+                st.markdown(f"**Reading the tape:** money is favoring **{lead['Asset Class']}** "
+                            f"(best vehicle {lead['Ticker']}, score {lead['Score']:.0f}) and shunning "
+                            f"**{lag['Asset Class']}** (score {lag['Score']:.0f}). Leadership rotates — this is "
+                            f"a momentum read for tilting *within* your target allocation, not a reason to abandon it.")
 
-        st.divider()
-        st.subheader("Full ranking")
-        show_cls = st.multiselect("Filter asset classes", list(ALL_ASSET_UNIVERSE.keys()),
-                                  default=list(ALL_ASSET_UNIVERSE.keys()))
-        view = df[df["Asset Class"].isin(show_cls)] if show_cls else df
-        st.dataframe(view, width="stretch", hide_index=True)
-        st.caption("**Score** = risk-adjusted trend (0-100): momentum 45% · return-per-unit-risk 30% · "
-                   "drawdown control 17% · cost 8%. **Sharpe (1y)** = (1-yr return − ~4.3% risk-free) ÷ "
-                   "volatility — higher means more return for the risk. Compare returns *alongside* "
-                   "volatility and drawdown, never alone. A high score means strong recent trend, not cheap.")
-    else:
-        st.info("Tap **Scan all asset classes** to rank stocks, real estate, bonds, commodities, and "
-                "international by risk-adjusted trend. Results cache for 6 hours.")
+                st.divider()
+                st.subheader("Full ranking")
+                show_cls = st.multiselect("Filter asset classes", list(ALL_ASSET_UNIVERSE.keys()),
+                                          default=list(ALL_ASSET_UNIVERSE.keys()))
+                view = df[df["Asset Class"].isin(show_cls)] if show_cls else df
+                st.dataframe(view, width="stretch", hide_index=True)
+                st.caption("**Score** = risk-adjusted trend (0-100): trend 45% (return-momentum + "
+                           "position vs 200-day MA) · return-per-unit-risk 30% · drawdown control 17% · "
+                           "cost 8%. **vs 200DMA %** above 0 = long-term uptrend. **Sharpe (1y)** = "
+                           "(1-yr return − ~4.3% risk-free) ÷ volatility. A high score means strong "
+                           "risk-adjusted trend, not cheap.")
+        else:
+            st.info("Tap **Scan all asset classes** to rank stocks, real estate, bonds, commodities, and "
+                    "international by risk-adjusted trend. Results cache for 6 hours.")
+
+    with tab_reits:
+        st.caption("Individual REITs valued on **FFO** (funds from operations = net income + property "
+                   "depreciation), not P/E — GAAP earnings are gutted by non-cash depreciation, so a "
+                   "REIT's P/E looks absurd (Realty Income ~54x) while its **P/FFO** is normal (~17x).")
+        if st.button("Scan REITs", type="primary", key="reit_scan") or st.session_state.get("reit_ran"):
+            st.session_state["reit_ran"] = True
+            with st.spinner("Scoring REITs on FFO fundamentals…"):
+                rdf = scan_reits()
+            if rdf.empty:
+                st.warning("Couldn't load REIT data right now. Try again shortly.")
+            else:
+                top = rdf.iloc[0]
+                st.markdown(f"**Best FFO value now:** **{top['Ticker']}** ({top['Name']}) — score "
+                            f"{top['Score']:.0f}, P/FFO {top['P/FFO']}, yield {top['Yield %']}%.")
+                st.dataframe(rdf, width="stretch", hide_index=True)
+                st.caption("**Score** (0-100): P/FFO valuation 35% · dividend safety (FFO payout) 25% · "
+                           "yield 20% · FFO/share growth 20%. **P/FFO** is the REIT P/E — lower is cheaper "
+                           "(~12x cheap, ~25x rich). **FFO Payout %** over 100% means the dividend exceeds "
+                           "FFO (a red flag). Cross-check leverage (Debt/Equity) — REITs are structurally levered.")
+        else:
+            st.info("Tap **Scan REITs** to rank ~20 major REITs by FFO valuation, dividend safety, "
+                    "yield, and FFO growth. Results cache for 12 hours.")
 
 
 def etf_explorer_page():
