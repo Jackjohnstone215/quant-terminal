@@ -3172,10 +3172,64 @@ def save_sp500_scores(df, merge=True):
     combined.to_csv(SP500_HISTORY, index=False)
 
 
-def load_sp500_scores():
+def _scan_sig():
+    """Signature that changes only when the saved scan (or its history) changes on disk — used as
+    a cache key so the expensive derive pipeline recomputes on a fresh daily scan, not every rerun."""
+    def _m(p):
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+    return (_m(SP500_CACHE), _m(SP500_HISTORY))
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _load_scored(_sig):
+    """Read + enhance the saved scan ONCE per file version. enhance_research_columns runs six
+    row-wise apply() passes over ~500 names — far too slow to repeat on every Streamlit rerun, so
+    it's cached here keyed on the file signature."""
     if SP500_CACHE.exists():
         return enhance_research_columns(pd.read_csv(SP500_CACHE))
     return pd.DataFrame()
+
+
+def load_sp500_scores():
+    # Cached read+enhance keyed to the file signature — instant on reruns, fresh after a daily scan.
+    return _load_scored(_scan_sig())
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def get_scored_universe(_sig):
+    """The fully-derived ranking table the homepage and Opportunity Engine both use: enhanced scan
+    + day-over-day score change + within-sector percentile ranks. Cached keyed to the scan file
+    signature so the whole pipeline (the slow part of loading those pages) runs once per fresh
+    scan instead of on every widget interaction."""
+    df = _load_scored(_sig)
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df = add_score_change(df)
+    df = add_sector_relative_scores(df)
+    return df
+
+
+def scan_freshness_text():
+    """Human 'as of' line for the saved scan: when it was last written, how many names, and the
+    range of point-in-time scan dates it spans (the daily job refreshes a rotating slice)."""
+    if not SP500_CACHE.exists():
+        return "No saved quant scan yet — the daily scan will populate it."
+    modified = datetime.fromtimestamp(SP500_CACHE.stat().st_mtime)
+    bits = [f"updated {modified.strftime('%Y-%m-%d %I:%M %p')}"]
+    try:
+        df = _load_scored(_scan_sig())
+        if not df.empty:
+            bits.append(f"{len(df)} names")
+            if "Scan Date" in df.columns:
+                ds = pd.to_datetime(df["Scan Date"], errors="coerce").dropna()
+                if len(ds) and ds.min().date() != ds.max().date():
+                    bits.append(f"scored {ds.min().strftime('%b %d')}–{ds.max().strftime('%b %d')}")
+    except Exception:
+        pass
+    return "Scores " + " · ".join(bits) + "."
 
 
 def load_history():
@@ -5597,8 +5651,7 @@ def research_queue_page():
 def opportunity_engine():
     st.title("Quant Opportunity Engine")
     st.caption("Ranks stocks using Investment, Opportunity, Position Trade, Health, and Expected Return scores.")
-    st.write(cache_age_text())
-    df = load_sp500_scores()
+    st.success(f"🟢 {scan_freshness_text()} Loaded from the daily auto-scan — up to date the moment you arrive.")
     tab_saved, tab_scan = st.tabs(["Saved Quant Scan", "Run / Update Quant Scan"])
     with tab_scan:
         st.write("Scan the **full S&P 500** — target a sector to keep each scan fast and within the FMP daily quota. Scans **merge** into your saved data, so you can build full coverage a sector at a time.")
@@ -5631,12 +5684,12 @@ def opportunity_engine():
                     st.caption("These were left OUT of your rankings instead of being given fake neutral scores.")
                     st.dataframe(pd.DataFrame(failures), width="stretch")
     with tab_saved:
+        # Fully-derived ranking, cached to the scan-file signature — instant on every rerun, and
+        # picks up a just-saved scan automatically (the file signature changes on save).
+        df = get_scored_universe(_scan_sig())
         if df.empty:
             st.warning("No saved quant scan yet. Use the Run / Update Quant Scan tab first.")
             return
-        df = enhance_research_columns(df)
-        df = add_score_change(df)
-        df = add_sector_relative_scores(df)
         st.subheader("Best Overall Research Priorities")
         st.dataframe(df.sort_values("Research Priority", ascending=False).head(25), width="stretch")
 
@@ -7366,11 +7419,9 @@ def daily_briefing_page():
     st.title("🏠 Daily Briefing")
     st.caption("Your watchlist and ideas load instantly. Tap for the long-term market outlook and today's mood.")
 
-    # Local data first — renders instantly (no network).
-    scan = load_sp500_scores()
-    scan = enhance_research_columns(scan) if not scan.empty else scan
-    if not scan.empty:
-        scan = add_score_change(scan)
+    # Local data first — renders instantly (no network). Cached derive pipeline (keyed to the
+    # scan-file signature) so the homepage doesn't rerun six apply() passes on every interaction.
+    scan = get_scored_universe(_scan_sig())
     wl = load_watchlist()
 
     # Heavy market data (long-term outlook + live mood) is OPT-IN so the page OPENS INSTANTLY.
