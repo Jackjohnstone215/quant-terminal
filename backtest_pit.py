@@ -342,8 +342,168 @@ def summarize(df, spy_ret, last_date, asof, dropped):
         print(f"\nDropped ({len(dropped)}): " + ", ".join(f"{t}({why})" for t, why in dropped[:20]))
 
 
+def pit_features(f, market_cap):
+    """Raw factors + pillar scores + composite for one name — the full feature row the efficacy
+    study correlates against forward returns. Same math as pit_score, but also exposes the raw
+    ratios so we can see which INPUTS (not just pillars) actually predicted returns."""
+    rev, ni, gp = f.get("revenue"), f.get("net_income"), f.get("gross_profit")
+    oi, assets, eq = f.get("operating_income"), f.get("assets"), f.get("equity")
+    cash = f.get("cash") or 0
+    debt = (f.get("lt_debt") or 0) + (f.get("cur_debt") or 0)
+    ocf, capex = f.get("op_cash_flow"), f.get("capex")
+
+    def ratio(a, b):
+        a, b = safe_float(a), safe_float(b)
+        return (a / b) if (a is not None and b not in (None, 0)) else None
+
+    net_m, gross_m, op_m = ratio(ni, rev), ratio(gp, rev), ratio(oi, rev)
+    roe, roa = ratio(ni, eq), ratio(ni, assets)
+    invested = (safe_float(eq) or 0) + debt - cash
+    roic = ratio(oi, invested) if invested > 0 else None
+    fcf = (safe_float(ocf) - safe_float(capex)) if (ocf is not None and capex is not None) else None
+    fcf_margin = ratio(fcf, rev)
+    rev_g = ratio(safe_float(rev) - safe_float(f.get("revenue_prev")), f.get("revenue_prev")) \
+        if (rev and f.get("revenue_prev")) else None
+    ni_g = ratio(safe_float(ni) - safe_float(f.get("net_income_prev")), abs(safe_float(f.get("net_income_prev")))) \
+        if (ni and f.get("net_income_prev")) else None
+    pe, pb = ratio(market_cap, ni), ratio(market_cap, eq)
+    d_to_e = ratio(debt, eq)
+
+    sc = pit_score(f, market_cap)
+    d_to_e_pct = d_to_e * 100 if d_to_e is not None else None
+    # REVISED composite — weights informed by the efficacy study: lead with revenue growth (the most
+    # robust factor, 4/4 cohorts), reward gross margin + FCF margin + low leverage (all robust),
+    # keep some ROIC, and STOP rewarding raw cheapness (P/B dropped entirely — it was the most
+    # inverted factor; P/E only mildly penalized at extremes rather than rewarded when low).
+    revised = (safe_score(rev_g, -0.03, 0.30) * 0.28 +
+               safe_score(gross_m, 0.20, 0.70) * 0.16 +
+               safe_score(fcf_margin, 0.0, 0.25) * 0.16 +
+               safe_score(roic, 0.05, 0.20) * 0.12 +
+               safe_score(d_to_e_pct, 20, 220, reverse=True) * 0.10 +
+               safe_score(ni_g, -0.05, 0.30) * 0.08 +
+               safe_score(pe if (pe and pe > 0) else 45, 15, 80, reverse=True) * 0.10)
+    return {
+        # pillars + composite (what the engine outputs)
+        "composite": sc["score"], "revised": round(clamp(revised), 1), "quality": sc["quality"],
+        "valuation": sc["valuation"], "growth": sc["growth"], "health": sc["health"],
+        # raw factors (the inputs) — the study checks which of THESE predict returns
+        "pe": pe, "pb": pb, "roic": roic, "roe": roe, "net_margin": net_m, "gross_margin": gross_m,
+        "op_margin": op_m, "fcf_margin": fcf_margin, "rev_growth": rev_g, "ni_growth": ni_g,
+        "leverage_de": d_to_e, "size_mktcap": market_cap, "coverage": sc["coverage"],
+    }
+
+
+# Direction each factor is EXPECTED to help: +1 means higher is better (engine rewards it),
+# -1 means lower is better (engine rewards cheapness/safety by scoring the inverse high).
+FACTOR_DIR = {
+    "composite": +1, "revised": +1, "quality": +1, "valuation": +1, "growth": +1, "health": +1,
+    "roic": +1, "roe": +1, "net_margin": +1, "gross_margin": +1, "op_margin": +1,
+    "fcf_margin": +1, "rev_growth": +1, "ni_growth": +1, "size_mktcap": +1,
+    "pe": -1, "pb": -1, "leverage_de": -1,   # the engine treats LOW P/E, P/B, leverage as good
+}
+
+
+def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-01"), horizon_years=3):
+    """For each cohort date, score every name PIT and measure its forward return over a FIXED
+    horizon, then Spearman-rank-correlate each factor with forward return. Averaging the sign and
+    size of that correlation ACROSS cohorts separates factors that robustly work from ones that
+    only worked in one regime. Returns (per_factor_summary_df, per_cohort_detail)."""
+    import pandas as pd
+    import yfinance as yf
+
+    cmap = cik_map()
+    tickers = [t for t in UNIVERSE if t in cmap]
+    px = yf.download(tickers, start="2013-06-01", progress=False, auto_adjust=True, actions=True)
+    close = px["Close"]
+
+    def fwd(tk, start, end):
+        if tk not in close.columns:
+            return None
+        s = close[tk].dropna()
+        p0 = price_on_or_after(s.to_frame("Close"), start)
+        p1 = price_on_or_after(s.to_frame("Close"), end)
+        return ((p1 / p0 - 1) * 100) if (p0 and p1) else None
+
+    factors = [k for k in FACTOR_DIR]
+    per_cohort = {}
+    for asof in cohorts:
+        end = f"{int(asof[:4]) + horizon_years}{asof[4:]}"
+        rows = []
+        for tk in tickers:
+            facts = company_facts(cmap[tk])
+            time.sleep(0.02)
+            if not facts:
+                continue
+            ff = pit_fundamentals(facts, asof)
+            mc = None
+            if tk in close.columns:
+                p_adj = price_on_or_after(close[tk].dropna().to_frame("Close"), asof)
+                sh = shares_asof(facts, asof)
+                # split factor after asof
+                sf = 1.0
+                if "Stock Splits" in px.columns.get_level_values(0) and tk in px["Stock Splits"].columns:
+                    ss = px["Stock Splits"][tk]
+                    idx = ss.index.tz_localize(None) if ss.index.tz is not None else ss.index
+                    for v in ss[(idx > pd.Timestamp(asof)) & (ss > 0)].values:
+                        sf *= float(v)
+                mc = p_adj * sh * sf if (p_adj and sh) else None
+            if not mc or ff.get("net_income") is None or ff.get("revenue") is None:
+                continue
+            feat = pit_features(ff, mc)
+            if feat["coverage"] < 4:
+                continue
+            feat["fwd"] = fwd(tk, asof, end)
+            feat["Ticker"] = tk
+            rows.append(feat)
+        df = pd.DataFrame([r for r in rows if r.get("fwd") is not None])
+        # Spearman rank corr of each factor vs forward return, oriented by expected direction.
+        corrs = {}
+        for fac in factors:
+            sub = df[[fac, "fwd"]].dropna()
+            if len(sub) >= 15:
+                # Spearman = Pearson on ranks (avoids the scipy dependency).
+                c = sub[fac].rank().corr(sub["fwd"].rank())
+                corrs[fac] = c * FACTOR_DIR[fac]   # orient: + means "worked as intended"
+        per_cohort[asof] = {"n": len(df), "end": end, "corrs": corrs}
+
+    # Aggregate across cohorts: mean oriented-correlation + how many cohorts it was positive.
+    summary = []
+    for fac in factors:
+        vals = [per_cohort[c]["corrs"].get(fac) for c in cohorts if fac in per_cohort[c]["corrs"]]
+        vals = [v for v in vals if v is not None]
+        if vals:
+            summary.append({"factor": fac, "mean_ic": sum(vals) / len(vals),
+                            "pos_cohorts": sum(1 for v in vals if v > 0), "n_cohorts": len(vals),
+                            "per": [round(v, 2) for v in vals]})
+    summary.sort(key=lambda r: r["mean_ic"], reverse=True)
+    return summary, per_cohort
+
+
+def print_efficacy(summary, per_cohort, cohorts):
+    print("=" * 78)
+    print("FACTOR EFFICACY — oriented Spearman rank-IC vs 3-yr forward return, by cohort")
+    print("(+ = the factor predicted returns in the direction our engine assumes; - = it hurt)")
+    print("=" * 78)
+    hdr = "  ".join(c[:4] for c in cohorts)
+    for asof in cohorts:
+        d = per_cohort[asof]
+        print(f"  cohort {asof} -> {d['end']}: {d['n']} names")
+    print(f"\n{'factor':14} {'mean IC':>8} {'+cohorts':>9}   per-cohort [{hdr}]")
+    print("-" * 78)
+    for r in summary:
+        flag = "  <-- robust" if (r["pos_cohorts"] == r["n_cohorts"] and r["mean_ic"] > 0.05) else \
+               ("  <-- INVERTED" if r["mean_ic"] < -0.03 else "")
+        print(f"{r['factor']:14} {r['mean_ic']:+8.3f} {r['pos_cohorts']}/{r['n_cohorts']:<7} {str(r['per']):>28}{flag}")
+
+
 if __name__ == "__main__":
     import sys
-    asof = sys.argv[1] if len(sys.argv) > 1 else "2020-01-01"
-    df, spy_ret, last_date, dropped = run_backtest(asof=asof)
-    summarize(df, spy_ret, last_date, asof, dropped)
+    mode = sys.argv[1] if len(sys.argv) > 1 else "backtest"
+    if mode == "efficacy":
+        cohorts = ("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-01")
+        summary, per_cohort = efficacy_study(cohorts=cohorts, horizon_years=3)
+        print_efficacy(summary, per_cohort, cohorts)
+    else:
+        asof = sys.argv[1] if len(sys.argv) > 1 else "2020-01-01"
+        df, spy_ret, last_date, dropped = run_backtest(asof=asof)
+        summarize(df, spy_ret, last_date, asof, dropped)
