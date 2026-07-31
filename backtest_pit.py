@@ -576,6 +576,75 @@ def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-0
     return summary, per_cohort
 
 
+def top_picks_backtest(asof="2016-01-01", n=20, universe=None, rank_by="revised"):
+    """Take the S&P 500 as of `asof`, rank point-in-time by a scoring column, take the top n, and
+    measure equal-weight total return to today vs SPY. rank_by='revised' = the new evidence-based
+    engine's fundamental core; 'composite' = the old engine. No lookahead (only pre-asof filings)."""
+    import pandas as pd
+    import yfinance as yf
+    universe = universe or sp500_nonfin()
+    cmap = cik_map()
+    tickers = [t for t in universe if t in cmap]
+    start = f"{int(asof[:4]) - 2}{asof[4:]}"
+    px = yf.download(tickers + ["SPY"], start=start, progress=False, auto_adjust=True, actions=True)
+    close = px["Close"]
+    last_date = close.index[-1].strftime("%Y-%m-%d")
+
+    def px_at(tk, d):
+        return price_on_or_after(close[tk].dropna().to_frame("Close"), d) if tk in close.columns else None
+
+    def split_after(tk, d):
+        sf = 1.0
+        if "Stock Splits" in px.columns.get_level_values(0) and tk in px["Stock Splits"].columns:
+            ss = px["Stock Splits"][tk]
+            idx = ss.index.tz_localize(None) if ss.index.tz is not None else ss.index
+            for v in ss[(idx > pd.Timestamp(d)) & (ss > 0)].values:
+                sf *= float(v)
+        return sf
+
+    now_spy0, now_spy1 = px_at("SPY", asof), (safe_float(close["SPY"].dropna().iloc[-1]) if "SPY" in close.columns else None)
+    spy_ret = (now_spy1 / now_spy0 - 1) * 100 if (now_spy0 and now_spy1) else None
+
+    rows = []
+    for tk in tickers:
+        facts = company_facts(cmap[tk])
+        if not facts:
+            continue
+        ff = pit_fundamentals(facts, asof)
+        p0 = px_at(tk, asof)
+        sh = shares_asof(facts, asof)
+        if not p0 or not sh or ff.get("net_income") is None or ff.get("revenue") is None:
+            continue
+        mc = p0 * sh * split_after(tk, asof)
+        feat = pit_features(ff, mc)
+        if feat["coverage"] < 4:
+            continue
+        p1 = safe_float(close[tk].dropna().iloc[-1]) if tk in close.columns else None
+        feat["Ticker"] = tk
+        feat["ret"] = (p1 / p0 - 1) * 100 if (p0 and p1) else None
+        rows.append(feat)
+
+    df = pd.DataFrame([r for r in rows if r.get("ret") is not None])
+    return df, spy_ret, last_date
+
+
+def _summarize_picks(df, spy_ret, last_date, asof, n, rank_by, label):
+    import statistics as st
+    top = df.sort_values(rank_by, ascending=False).head(n)
+    rets = top["ret"].tolist()
+    avg, med = sum(rets) / len(rets), st.median(rets)
+    final = sum(10000.0 / n * (1 + r / 100) for r in rets)
+    nbeat = sum(1 for r in rets if r > spy_ret)
+    print(f"\n{'=' * 70}\n{label}: top {n} by '{rank_by}' as of {asof} -> {last_date}\n{'=' * 70}")
+    print(f"{'Ticker':7}{'score':>7}{'return':>11}   $500 ->")
+    for _, r in top.iterrows():
+        print(f"{r['Ticker']:7}{r[rank_by]:7.1f}{r['ret']:+10.0f}%  ${500 * (1 + r['ret'] / 100):>8,.0f}")
+    print(f"{'-' * 40}")
+    print(f"Equal-weight avg {avg:+.0f}%  |  median {med:+.0f}%  |  {nbeat}/{n} beat SPY")
+    print(f"$10,000 -> ${final:,.0f}   (SPY +{spy_ret:.0f}% -> ${10000 * (1 + spy_ret / 100):,.0f})")
+    return {"avg": avg, "med": med, "final": final, "nbeat": nbeat}
+
+
 def print_efficacy(summary, per_cohort, cohorts, horizon_years=3):
     n_names = int(sum(per_cohort[c]["n"] for c in cohorts) / max(len(cohorts), 1))
     print("=" * 74)
@@ -602,6 +671,13 @@ if __name__ == "__main__":
         cohorts = ("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-01")
         summary, per_cohort = efficacy_study(cohorts=cohorts, horizon_years=3)
         print_efficacy(summary, per_cohort, cohorts, 3)
+    elif mode == "topn":
+        asof = sys.argv[2] if len(sys.argv) > 2 else "2016-01-01"
+        n = int(sys.argv[3]) if len(sys.argv) > 3 else 20
+        df, spy_ret, last_date = top_picks_backtest(asof=asof, n=n)
+        print(f"S&P 500 non-financials scored point-in-time as of {asof}; {len(df)} names with data.")
+        _summarize_picks(df, spy_ret, last_date, asof, n, "revised", "NEW evidence-based engine")
+        _summarize_picks(df, spy_ret, last_date, asof, n, "composite", "OLD engine (for comparison)")
     elif mode == "wide":
         # Widened, more rigorous test: full S&P 500 non-financials, 10 non-overlapping annual
         # cohorts on a 1-yr horizon (valid t-stats), plus a 3-yr horizon pass for robustness.
