@@ -733,6 +733,7 @@ def normalize_scores_df(df):
         "Risk Score": 0.0,
         "Earnings Quality Score": 0.0,
         "Relative Strength Score": 0.0,
+        "Size Score": 0.0,
         "Labels": "General Watchlist",
         "Verdict": "Watchlist only",
         "Research Action": "Research only",
@@ -751,7 +752,7 @@ def normalize_scores_df(df):
         "Investment Score", "Opportunity Score", "Position Trade Score", "Health Score",
         "Expected Return Score", "Overall Quant Score", "Quality Score", "Valuation Score",
         "Growth Score", "Cash Flow Score", "Financial Strength Score", "Momentum Score",
-        "Risk Score", "Earnings Quality Score", "Relative Strength Score", "Conviction Score", "Evidence Score", "Research Priority"
+        "Risk Score", "Earnings Quality Score", "Relative Strength Score", "Size Score", "Conviction Score", "Evidence Score", "Research Priority"
     ]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
@@ -2594,6 +2595,31 @@ COVERAGE_FIELDS = [
 ]
 
 
+@st.cache_data(ttl=12 * 3600, show_spinner=False)
+def _current_10y_yield():
+    """Latest 10-yr Treasury yield (%), for the value-regime tilt. Cached 12h; None on failure."""
+    try:
+        h = yf.Ticker("^TNX").history(period="5d")
+        if len(h):
+            v = safe_float(h["Close"].iloc[-1])
+            if v is not None:
+                return v / 10 if v > 20 else v   # ^TNX is sometimes quoted as 10x the yield
+    except Exception:
+        pass
+    return None
+
+
+def value_regime_weight():
+    """How much to trust cheapness right now, in [0.4, 1.0]. The 2015-2024 efficacy study found the
+    valuation/cheapness factor was significantly INVERTED when rates were low (2010s) and only
+    flipped positive as rates rose (2021+). So scale value's influence with the 10-yr yield: low
+    rates -> lean on it little (0.4, mostly neutral), high rates -> full weight (1.0)."""
+    tnx = _current_10y_yield()
+    if tnx is None:
+        return 0.6
+    return max(0.4, min(1.0, 0.4 + (tnx - 2.0) / 3.0 * 0.6))   # 2% -> 0.4, 5% -> 1.0
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_quant_score(ticker):
     info, hist = fetch_ticker_bundle(ticker)
@@ -2730,15 +2756,18 @@ def get_quant_score(ticker):
         volume_ratio = 1
         high_52 = low_52 = None
 
-    # Quality = capital efficiency FIRST (ROIC/ROE), margins second. Margins alone mismark elite
-    # low-margin/high-turnover businesses (Costco, Amazon) as low quality; their edge is turnover
-    # and returns on capital, not fat margins. Softer margin floors so thin margins aren't a flat 0.
+    # Quality — REWEIGHTED from the 2015-2024 efficacy study (backtest_pit.py). Gross margin was the
+    # most ROBUST quality signal (positive 4/4 cohorts); FCF margin also predicted returns. ROE was
+    # significantly INVERTED (t=-3.1), operating margin badly inverted (t=-7.0), and ROIC was flat
+    # (no predictive power). So quality now leads with gross + FCF margin and keeps ROE/op-margin/
+    # ROIC only as minor business-quality descriptors, not return bets.
     quality_score = (
-        safe_score(roic_proxy, 0.05, 0.20) * 0.34 +
-        safe_score(roe, 0.05, 0.30) * 0.24 +
-        safe_score(gross_margin, 0.15, 0.65) * 0.12 +
-        safe_score(operating_margin, 0.04, 0.32) * 0.16 +
-        safe_score(profit_margin, 0.02, 0.22) * 0.14
+        safe_score(fcf_margin, 0.00, 0.25) * 0.26 +
+        safe_score(gross_margin, 0.15, 0.65) * 0.22 +
+        safe_score(roic_proxy, 0.05, 0.20) * 0.18 +
+        safe_score(profit_margin, 0.02, 0.22) * 0.14 +
+        safe_score(roe, 0.05, 0.30) * 0.10 +
+        safe_score(operating_margin, 0.04, 0.32) * 0.10
     )
 
     cash_flow_score = (
@@ -2758,12 +2787,15 @@ def get_quant_score(ticker):
         safe_score(fcf_yield, 0.00, 0.08) * 0.10
     )
 
+    # Growth — REWEIGHTED: revenue growth was the single best fundamental predictor across cohorts
+    # (mean IC +0.11, the top factor), clearly ahead of earnings growth; FCF margin also predicted;
+    # operating margin was inverted. So lead with revenue growth, cut earnings-growth and op-margin.
     growth_score = (
-        safe_score(revenue_growth, -0.03, 0.25) * 0.35 +
-        safe_score(earnings_growth, -0.05, 0.30) * 0.35 +
+        safe_score(revenue_growth, -0.03, 0.25) * 0.45 +
+        safe_score(earnings_growth, -0.05, 0.30) * 0.25 +
+        safe_score(fcf_margin, 0.00, 0.25) * 0.15 +
         safe_score(return_12m, -0.25, 0.50) * 0.10 +
-        safe_score(operating_margin, 0.03, 0.30) * 0.10 +
-        safe_score(fcf_margin, 0.00, 0.25) * 0.10
+        safe_score(operating_margin, 0.03, 0.30) * 0.05
     )
 
     financial_strength_score = (
@@ -2845,27 +2877,40 @@ def get_quant_score(ticker):
         earnings_quality_score * 0.20
     )
 
+    # Size tilt (change 3): within the S&P 500, SMALLER names beat larger ones — the single most
+    # statistically significant effect in the study (t=-5.9 at 1yr, -8.7 at 3yr). Smaller -> higher.
+    size_score = safe_score(market_cap, 8e9, 6e11, reverse=True)
+
+    # Investment (long-term) — REWEIGHTED: more growth (revenue growth is the best fundamental),
+    # a nudge up in financial strength (low leverage was robustly positive, t=2.5), and a small
+    # size tilt. Quality/cash-flow trimmed slightly to make room.
     investment_score = (
-        quality_score * 0.28 +
-        cash_flow_score * 0.22 +
-        growth_score * 0.18 +
-        financial_strength_score * 0.17 +
-        earnings_quality_score * 0.10 +
-        risk_score * 0.05
+        quality_score * 0.26 +
+        growth_score * 0.22 +
+        cash_flow_score * 0.20 +
+        financial_strength_score * 0.18 +
+        size_score * 0.04 +
+        earnings_quality_score * 0.07 +
+        risk_score * 0.03
     )
 
-    # Quality-gated value (Greenblatt-style): cheapness only counts as an "opportunity" if the
-    # business is decent. A cheap low-quality name (value trap) gets its valuation credit scaled
-    # down, so junk stops topping the undervalued list and cheap-AND-good names rise.
+    # Quality-gated value (Greenblatt-style): cheapness only counts if the business is decent.
+    # PLUS a regime tilt (change 1): the study found rewarding cheapness was significantly INVERTED
+    # in low-rate regimes. value_regime_weight() blends the value signal toward neutral (50) when
+    # rates are low, so we stop betting on cheapness until the regime rewards it. Its overall weight
+    # in opportunity is also cut (0.30 -> 0.18) since value was the weakest/most-inverted factor.
     quality_gate = clamp(0.35 + 0.65 * quality_score / 100.0, 0, 100) / 100.0
     quality_gated_value = valuation_score * quality_gate
+    vrw = value_regime_weight()
+    value_signal = quality_gated_value * vrw + 50.0 * (1 - vrw)
     opportunity_score = (
-        quality_gated_value * 0.30 +
+        value_signal * 0.18 +
+        quality_score * 0.22 +
+        growth_score * 0.20 +
         cash_flow_score * 0.20 +
-        quality_score * 0.18 +
-        growth_score * 0.12 +
-        financial_strength_score * 0.10 +
-        safe_score(upside_to_fair_value, -0.10, 0.35) * 0.10
+        financial_strength_score * 0.12 +
+        size_score * 0.04 +
+        safe_score(upside_to_fair_value, -0.10, 0.35) * 0.04
     )
 
     position_trade_score = (
@@ -2955,6 +3000,7 @@ def get_quant_score(ticker):
         "Growth Score": growth_score,
         "Financial Strength Score": financial_strength_score,
         "Relative Strength Score": relative_strength_score,
+        "Size Score": size_score,
         "Risk Score": risk_score,
         "News Sentiment Score": news_sentiment_score,
         "FCF Yield %": pct(fcf_yield),
@@ -3025,6 +3071,7 @@ def get_quant_score(ticker):
         "Financial Strength Score": round(financial_strength_score, 1),
         "Momentum Score": round(momentum_score, 1),
         "Relative Strength Score": round(relative_strength_score, 1),
+        "Size Score": round(size_score, 1),
         "Risk Score": round(risk_score, 1),
         "Earnings Quality Score": round(earnings_quality_score, 1),
         "News Sentiment Score": round(news_sentiment_score, 1),
