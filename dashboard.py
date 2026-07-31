@@ -2595,6 +2595,33 @@ COVERAGE_FIELDS = [
 ]
 
 
+# Typical margin ranges (poor -> excellent) by Yahoo sector, for SECTOR-RELATIVE quality scoring.
+# Absolute margin bands unfairly punish structurally low-margin sectors: software runs ~75% gross,
+# a great retailer ~25%, so an absolute band marks the retailer down for its business model, not its
+# execution. These bands score a company AGAINST its sector — a 25% gross-margin retailer can score
+# as "excellent for retail." Keys are (gross, operating, profit, fcf). Financials/Real Estate use
+# the default (their economics need FFO/book, handled elsewhere). Calibrated to typical S&P sector
+# economics; illustrative, not fitted.
+SECTOR_MARGIN_BANDS = {
+    "Technology":             {"gross": (0.35, 0.75), "operating": (0.10, 0.40), "profit": (0.08, 0.30), "fcf": (0.08, 0.35)},
+    "Communication Services": {"gross": (0.35, 0.70), "operating": (0.10, 0.35), "profit": (0.05, 0.25), "fcf": (0.05, 0.30)},
+    "Healthcare":             {"gross": (0.35, 0.78), "operating": (0.08, 0.35), "profit": (0.05, 0.25), "fcf": (0.05, 0.28)},
+    "Consumer Cyclical":      {"gross": (0.20, 0.50), "operating": (0.05, 0.20), "profit": (0.03, 0.15), "fcf": (0.02, 0.15)},
+    "Consumer Defensive":     {"gross": (0.20, 0.45), "operating": (0.05, 0.18), "profit": (0.03, 0.14), "fcf": (0.02, 0.14)},
+    "Industrials":            {"gross": (0.20, 0.45), "operating": (0.06, 0.22), "profit": (0.04, 0.16), "fcf": (0.03, 0.16)},
+    "Energy":                 {"gross": (0.15, 0.45), "operating": (0.05, 0.25), "profit": (0.03, 0.18), "fcf": (0.02, 0.18)},
+    "Basic Materials":        {"gross": (0.15, 0.40), "operating": (0.06, 0.24), "profit": (0.04, 0.16), "fcf": (0.02, 0.15)},
+    "Utilities":              {"gross": (0.30, 0.60), "operating": (0.12, 0.30), "profit": (0.06, 0.18), "fcf": (-0.05, 0.08)},
+}
+DEFAULT_MARGIN_BANDS = {"gross": (0.15, 0.65), "operating": (0.04, 0.32), "profit": (0.02, 0.22), "fcf": (0.00, 0.25)}
+
+
+def margin_bands(sector):
+    """Sector-normal (poor, excellent) margin ranges for sector-relative quality scoring; falls back
+    to market-wide bands for unknown or financial sectors."""
+    return SECTOR_MARGIN_BANDS.get(str(sector), DEFAULT_MARGIN_BANDS)
+
+
 @st.cache_data(ttl=12 * 3600, show_spinner=False)
 def _current_10y_yield():
     """Latest 10-yr Treasury yield (%), for the value-regime tilt. Cached 12h; None on failure."""
@@ -2761,13 +2788,17 @@ def get_quant_score(ticker):
     # significantly INVERTED (t=-3.1), operating margin badly inverted (t=-7.0), and ROIC was flat
     # (no predictive power). So quality now leads with gross + FCF margin and keeps ROE/op-margin/
     # ROIC only as minor business-quality descriptors, not return bets.
+    # Margins scored SECTOR-RELATIVE (against sector-normal bands) so a low-margin sector isn't
+    # structurally penalized; ROIC and ROE stay absolute (return-on-capital is comparable across
+    # sectors and shouldn't be graded on a curve).
+    _mb = margin_bands(sector)
     quality_score = (
-        safe_score(fcf_margin, 0.00, 0.25) * 0.26 +
-        safe_score(gross_margin, 0.15, 0.65) * 0.22 +
+        safe_score(fcf_margin, *_mb["fcf"]) * 0.26 +
+        safe_score(gross_margin, *_mb["gross"]) * 0.22 +
         safe_score(roic_proxy, 0.05, 0.20) * 0.18 +
-        safe_score(profit_margin, 0.02, 0.22) * 0.14 +
+        safe_score(profit_margin, *_mb["profit"]) * 0.14 +
         safe_score(roe, 0.05, 0.30) * 0.10 +
-        safe_score(operating_margin, 0.04, 0.32) * 0.10
+        safe_score(operating_margin, *_mb["operating"]) * 0.10
     )
 
     cash_flow_score = (
