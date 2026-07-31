@@ -645,6 +645,29 @@ def _summarize_picks(df, spy_ret, last_date, asof, n, rank_by, label):
     return {"avg": avg, "med": med, "final": final, "nbeat": nbeat}
 
 
+def _growth_wt(rate):
+    """Growth weight in [0.6, 1.0] from the 10-yr yield — mirrors the live growth_regime_weight()."""
+    if rate is None:
+        return 0.85
+    return max(0.6, min(1.0, 1.0 - (rate - 2.0) / 3.0 * 0.4))
+
+
+def revised_regime_score(feat, grw):
+    """The 'revised' composite with the RATE-AWARE GROWTH DAMPENER applied: growth's weight scales
+    with grw and the freed weight is split to low-leverage and value (soft P/E). Self-normalizing."""
+    rg = safe_score(feat.get("rev_growth"), -0.03, 0.30)
+    gm = safe_score(feat.get("gross_margin"), 0.15, 0.65)
+    fm = safe_score(feat.get("fcf_margin"), 0.0, 0.25)
+    rc = safe_score(feat.get("roic"), 0.05, 0.20)
+    ll = safe_score(feat.get("leverage_de"), 0.2, 2.2, reverse=True)
+    ng = safe_score(feat.get("ni_growth"), -0.05, 0.30)
+    pe = feat.get("pe")
+    sp = safe_score(pe if (pe and pe > 0) else 45, 15, 80, reverse=True)
+    freed = 0.28 * (1 - grw)
+    return round(clamp(rg * (0.28 * grw) + gm * 0.16 + fm * 0.16 + rc * 0.12 +
+                       ll * (0.10 + freed * 0.5) + ng * 0.08 + sp * (0.10 + freed * 0.5)), 1)
+
+
 def rolling_backtest(years=range(2016, 2025), n=20, universe=None):
     """For each start year, rank the S&P point-in-time by BOTH engines, hold the top n to today, and
     compare to SPY. One price download, facts cached in memory. Also reports the revised score's IC
@@ -656,10 +679,26 @@ def rolling_backtest(years=range(2016, 2025), n=20, universe=None):
     universe = universe or sp500_nonfin()
     cmap = cik_map()
     tickers = [t for t in universe if t in cmap]
-    px = yf.download(tickers + ["SPY"], start="2013-06-01", progress=False, auto_adjust=True, actions=True)
+    px = yf.download(tickers + ["SPY"], start="2009-06-01", progress=False, auto_adjust=True, actions=True)
     close = px["Close"]
     last_date = close.index[-1].strftime("%Y-%m-%d")
     p_now = {tk: safe_float(close[tk].dropna().iloc[-1]) for tk in close.columns if tk in close.columns}
+
+    # 10-yr Treasury history for the point-in-time growth dampener.
+    try:
+        tnx = yf.Ticker("^TNX").history(start="2009-06-01")["Close"]
+        tnx.index = tnx.index.tz_localize(None) if tnx.index.tz is not None else tnx.index
+    except Exception:
+        tnx = None
+
+    def rate_at(d):
+        if tnx is None or not len(tnx):
+            return None
+        s = tnx[tnx.index <= pd.Timestamp(d)]
+        if not len(s):
+            return None
+        v = float(s.iloc[-1])
+        return v / 10 if v > 20 else v
 
     def px_at(tk, d):
         return price_on_or_after(close[tk].dropna().to_frame("Close"), d) if tk in close.columns else None
@@ -678,6 +717,7 @@ def rolling_backtest(years=range(2016, 2025), n=20, universe=None):
         asof = f"{y}-01-01"
         spy0 = px_at("SPY", asof)
         spy_ret = (p_now.get("SPY") / spy0 - 1) * 100 if (spy0 and p_now.get("SPY")) else None
+        grw = _growth_wt(rate_at(asof))
         rows = []
         for tk in tickers:
             facts = company_facts(cmap[tk])
@@ -690,6 +730,7 @@ def rolling_backtest(years=range(2016, 2025), n=20, universe=None):
             feat = pit_features(ff, p0 * sh * split_after(tk, asof))
             if feat["coverage"] < 4 or not p_now.get(tk):
                 continue
+            feat["regime"] = revised_regime_score(feat, grw)   # growth dampener applied PIT
             feat["Ticker"], feat["ret"] = tk, (p_now[tk] / p0 - 1) * 100
             rows.append(feat)
         df = pd.DataFrame(rows)
@@ -697,8 +738,8 @@ def rolling_backtest(years=range(2016, 2025), n=20, universe=None):
             continue
         ic = df["revised"].rank().corr(df["ret"].rank())
         rec = {"year": y, "horizon": round((pd.Timestamp(last_date) - pd.Timestamp(asof)).days / 365.0, 1),
-               "n": len(df), "spy": spy_ret, "ic_revised": ic}
-        for eng, col in (("new", "revised"), ("old", "composite")):
+               "n": len(df), "spy": spy_ret, "ic_revised": ic, "rate": rate_at(asof), "grw": round(grw, 2)}
+        for eng, col in (("new", "revised"), ("regime", "regime"), ("old", "composite")):
             top = df.sort_values(col, ascending=False).head(n)
             rets = sorted(top["ret"].tolist(), reverse=True)
             avg = sum(rets) / len(rets)
@@ -710,24 +751,30 @@ def rolling_backtest(years=range(2016, 2025), n=20, universe=None):
 
 
 def print_rolling(out, last_date):
-    print(f"\n{'=' * 82}")
-    print(f"ROLLING YEAR-BY-YEAR: top 20 held to {last_date}. NEW engine vs OLD vs SPY.")
-    print(f"{'=' * 82}")
-    print(f"{'start':>5} {'yrs':>4} {'names':>5} {'SPY%':>7} | {'NEW avg':>8} {'med':>6} {'beat':>5} "
-          f"{'exTop':>7} {'vsSPY':>7} | {'OLD avg':>8} | {'IC':>6}")
-    print("-" * 82)
+    print(f"\n{'=' * 86}")
+    print(f"ROLLING YEAR-BY-YEAR: top 20 held to {last_date}. NEW vs REGIME (growth dampener) vs OLD vs SPY.")
+    print(f"{'=' * 86}")
+    print(f"{'start':>5} {'yrs':>4} {'10yr':>5} {'grw':>4} {'SPY%':>6} | {'NEW':>6} {'REGIME':>7} "
+          f"{'OLD':>6} | {'best engine':>12}")
+    print("-" * 86)
     for r in out:
-        nw, od = r["new"], r["old"]
-        ex = nw["avg"] - r["spy"]
-        print(f"{r['year']:>5} {r['horizon']:>4} {r['n']:>5} {r['spy']:>+7.0f} | "
-              f"{nw['avg']:>+8.0f} {nw['med']:>+6.0f} {nw['beat']:>3}/20 {nw['ex_top_avg']:>+7.0f} "
-              f"{ex:>+7.0f} | {od['avg']:>+8.0f} | {r['ic_revised']:>+6.2f}")
-    wins = sum(1 for r in out if r["new"]["avg"] > r["spy"])
-    new_wins_old = sum(1 for r in out if r["new"]["avg"] > r["old"]["avg"])
-    print("-" * 82)
-    print(f"NEW beat SPY (avg): {wins}/{len(out)} start-years · NEW beat OLD: {new_wins_old}/{len(out)}")
-    print("exTop = top-20 avg EXCLUDING each cohort's single best name (tail-dependence check).")
-    print("IC = revised score's rank correlation with return-to-today that year (prediction quality).")
+        nw, rg, od = r["new"]["avg"], r["regime"]["avg"], r["old"]["avg"]
+        best = max([("NEW", nw), ("REGIME", rg), ("OLD", od)], key=lambda x: x[1])[0]
+        rate = f"{r.get('rate'):.1f}" if r.get("rate") is not None else "  ?"
+        print(f"{r['year']:>5} {r['horizon']:>4} {rate:>5} {r.get('grw', 0):>4.2f} {r['spy']:>+6.0f} | "
+              f"{nw:>+6.0f} {rg:>+7.0f} {od:>+6.0f} | {best:>12}")
+    print("-" * 86)
+    n = len(out)
+    print(f"beat SPY (avg):   NEW {sum(1 for r in out if r['new']['avg']>r['spy'])}/{n}  "
+          f"REGIME {sum(1 for r in out if r['regime']['avg']>r['spy'])}/{n}  "
+          f"OLD {sum(1 for r in out if r['old']['avg']>r['spy'])}/{n}")
+    print(f"REGIME beat NEW:  {sum(1 for r in out if r['regime']['avg']>r['new']['avg'])}/{n} start-years "
+          f"(the growth dampener's net effect)")
+    # Did the dampener help in the high-rate cohorts specifically?
+    hi = [r for r in out if (r.get("rate") or 0) >= 3.0]
+    if hi:
+        rw = sum(1 for r in hi if r["regime"]["avg"] > r["new"]["avg"])
+        print(f"  in high-rate starts (10yr>=3%): REGIME beat NEW {rw}/{len(hi)} — where the dampener should matter.")
 
 
 def print_efficacy(summary, per_cohort, cohorts, horizon_years=3):
@@ -757,7 +804,8 @@ if __name__ == "__main__":
         summary, per_cohort = efficacy_study(cohorts=cohorts, horizon_years=3)
         print_efficacy(summary, per_cohort, cohorts, 3)
     elif mode == "rolling":
-        out, last_date = rolling_backtest(years=range(2016, 2025), n=20)
+        y0 = int(sys.argv[2]) if len(sys.argv) > 2 else 2011
+        out, last_date = rolling_backtest(years=range(y0, 2025), n=20)
         print_rolling(out, last_date)
     elif mode == "topn":
         asof = sys.argv[2] if len(sys.argv) > 2 else "2016-01-01"
