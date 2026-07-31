@@ -2688,6 +2688,19 @@ def value_regime_weight():
     return max(0.4, min(1.0, 0.4 + (tnx - 2.0) / 3.0 * 0.6))   # 2% -> 0.4, 5% -> 1.0
 
 
+def growth_regime_weight():
+    """How much to lean on GROWTH right now, in [0.6, 1.0] — the symmetric complement to
+    value_regime_weight(). The rolling year-by-year backtest showed the engine's growth tilt
+    INVERTED in the rate-rising/value years (2021-2022 IC went negative and the less-growth-tilted
+    old engine won). Growth compounds best when money is cheap (a low discount rate flatters far-off
+    cash flows); when rates rise, value leads. So dampen growth as the 10-yr yield rises and hand
+    that weight to the value + low-leverage factors that DO work in that regime."""
+    tnx = _current_10y_yield()
+    if tnx is None:
+        return 0.85
+    return max(0.6, min(1.0, 1.0 - (tnx - 2.0) / 3.0 * 0.4))   # 2% -> 1.0, 5% -> 0.6
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_quant_score(ticker):
     info, hist = fetch_ticker_bundle(ticker)
@@ -2954,14 +2967,22 @@ def get_quant_score(ticker):
     # statistically significant effect in the study (t=-5.9 at 1yr, -8.7 at 3yr). Smaller -> higher.
     size_score = safe_score(market_cap, 8e9, 6e11, reverse=True)
 
-    # Investment (long-term) — REWEIGHTED: more growth (revenue growth is the best fundamental),
-    # a nudge up in financial strength (low leverage was robustly positive, t=2.5), and a small
-    # size tilt. Quality/cash-flow trimmed slightly to make room.
+    # Rate-aware GROWTH dampener: the rolling backtest showed the growth tilt inverts when rates
+    # rise. grw scales growth's weight (1.0 in low-rate regimes -> 0.6 in high-rate); the freed
+    # weight moves to the factors that work in high-rate regimes — low leverage here, value in
+    # opportunity. Weights are reallocated (not added) so each composite still sums to 1.0.
+    grw = growth_regime_weight()
+
+    # Investment (long-term) — REWEIGHTED: growth-led (revenue growth is the best fundamental) with
+    # a low-leverage tilt (robustly positive, t=2.5) and a small size tilt. In high-rate regimes the
+    # growth weight (base 0.22) is dampened and handed to financial strength (base 0.18).
+    inv_growth_wt = 0.22 * grw
+    inv_finstr_wt = 0.18 + 0.22 * (1 - grw)
     investment_score = (
         quality_score * 0.26 +
-        growth_score * 0.22 +
+        growth_score * inv_growth_wt +
         cash_flow_score * 0.20 +
-        financial_strength_score * 0.18 +
+        financial_strength_score * inv_finstr_wt +
         size_score * 0.04 +
         earnings_quality_score * 0.07 +
         risk_score * 0.03
@@ -2976,10 +2997,15 @@ def get_quant_score(ticker):
     quality_gated_value = valuation_score * quality_gate
     vrw = value_regime_weight()
     value_signal = quality_gated_value * vrw + 50.0 * (1 - vrw)
+    # Regime-aware growth<->value trade-off: in high-rate regimes growth's weight (base 0.20) is
+    # dampened and handed to the (now-working) value signal (base 0.18). Sum of the two is constant
+    # (0.38), so opportunity_score still sums to 1.0.
+    opp_growth_wt = 0.20 * grw
+    opp_value_wt = 0.18 + 0.20 * (1 - grw)
     opportunity_score = (
-        value_signal * 0.18 +
+        value_signal * opp_value_wt +
         quality_score * 0.22 +
-        growth_score * 0.20 +
+        growth_score * opp_growth_wt +
         cash_flow_score * 0.20 +
         financial_strength_score * 0.12 +
         size_score * 0.04 +
