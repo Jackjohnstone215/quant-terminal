@@ -3222,20 +3222,28 @@ def get_quant_score(ticker):
     }
 
 
-def score_many(tickers):
-    """Score a list of tickers, skipping (not fabricating) any with no reliable data.
-    Returns (scored_dataframe, failures_list) so the caller can report what was skipped."""
-    rows = []
-    failures = []
-    progress = st.progress(0)
-    for i, ticker in enumerate(tickers):
-        try:
-            rows.append(get_quant_score(ticker))
-        except DataUnavailable:
-            failures.append({"Ticker": ticker, "Reason": "No reliable data — skipped (likely delisted/renamed/invalid)"})
-        except Exception as e:
-            failures.append({"Ticker": ticker, "Reason": str(e)[:140]})
-        progress.progress((i + 1) / max(len(tickers), 1))
+def score_many(tickers, max_workers=8):
+    """Score a list of tickers CONCURRENTLY, skipping (not fabricating) any with no reliable data.
+    Returns (scored_dataframe, failures_list). Each score is a network round-trip (I/O-bound), so
+    fetching ~8 at a time is roughly 8x faster than sequential while staying under the data sources'
+    rate limits — the difference between a scan that finishes and one that times out in the browser."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    rows, failures = [], []
+    total = max(len(tickers), 1)
+    progress = st.progress(0.0, text=f"Scoring 0 / {len(tickers)}…")
+    done = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(get_quant_score, tk): tk for tk in tickers}
+        for fut in as_completed(futures):
+            tk = futures[fut]
+            try:
+                rows.append(fut.result())
+            except DataUnavailable:
+                failures.append({"Ticker": tk, "Reason": "No reliable data — skipped (likely delisted/renamed/invalid)"})
+            except Exception as e:
+                failures.append({"Ticker": tk, "Reason": str(e)[:140]})
+            done += 1
+            progress.progress(done / total, text=f"Scoring {done} / {len(tickers)}… ({len(rows)} done, {len(failures)} skipped)")
     progress.empty()
     return pd.DataFrame(rows), failures
 
@@ -5819,9 +5827,14 @@ def opportunity_engine():
         )
         tickers = tickers_for_sectors(chosen_sectors)
         max_n = max(10, len(tickers))
-        scan_size = st.slider("How many stocks to scan", 10, min(500, max_n), min(50, max_n))
+        scan_size = st.slider("How many stocks to scan", 10, min(500, max_n), min(30, max_n))
         st.caption(f"{len(tickers)} names available in the selected universe. Scanning the first {scan_size}.")
-        st.warning("A large scan takes time and burns FMP quota (free tier = 250 calls/day, ~4 per stock). Start with one sector.")
+        st.info("**Want the whole index refreshed with the new engine?** Don't do it here — a live browser "
+                "scan is limited by the data provider (~2-3s per stock and a 250/day quota), so big scans "
+                "crawl or time out. Instead trigger the **Full Refresh** on GitHub (Actions tab → *Full "
+                "Refresh* → *Run workflow*): it rescans the entire S&P 500 server-side on Yahoo (no quota, "
+                "no browser), commits the results, and the site redeploys with fresh scores in minutes. "
+                "Use this browser scan only for a quick spot-check of a sector or a few names.")
         st.caption("⚡ Fetched data is cached on disk (~20h) — re-scanning the same names is fast and free. Clear the cache to force fresh data.")
         if st.button("🧹 Clear data cache"):
             st.success(f"Cleared {clear_data_cache()} cached files. Next scan pulls fresh data.")

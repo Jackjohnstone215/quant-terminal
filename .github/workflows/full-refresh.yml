@@ -1,0 +1,47 @@
+name: Full Refresh (whole S&P 500, on demand)
+
+# One-click, SERVER-SIDE full rescan of the entire S&P 500 with the current engine — the thing the
+# in-browser "Run Quant Scan" button can't do reliably (the data provider is slow + quota-capped, and
+# a long scan times out the browser). This runs on GitHub's servers with no browser and no FMP daily
+# quota: it deliberately omits FMP_API_KEY so the engine uses Yahoo (no 250/day cap), and SCAN_CHUNK
+# is set above the index size so run_scan.py scores the whole index in one pass, then commits it.
+# Trigger it from the Actions tab -> "Full Refresh" -> "Run workflow". Streamlit Cloud redeploys on
+# the commit, so the site shows fresh new-engine scores (incl. the Fundamental Core ranking) minutes later.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  full-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scan the whole S&P 500 (Yahoo — no FMP quota)
+        run: python run_scan.py
+        env:
+          SCAN_CHUNK: "600"        # >= index size -> run_scan scores the ENTIRE index in one run
+          # FMP_API_KEY intentionally NOT passed -> engine uses Yahoo Finance (no 250/day quota)
+
+      - name: Commit refreshed scores
+        run: |
+          git config user.name "quant-scan-bot"
+          git config user.email "actions@github.com"
+          git add sp500_quant_scores.csv sp500_quant_score_history.csv
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Full-index refresh — new engine ($(date -u +%Y-%m-%d))"
+            git push
+          fi
