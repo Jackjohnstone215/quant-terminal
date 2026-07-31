@@ -65,9 +65,20 @@ def cik_map():
     return out
 
 
+_FACTS_MEM = {}   # CIK -> parsed companyfacts, so the multi-MB JSON is parsed once, not per cohort
+
+
 def company_facts(cik):
-    return _sec_get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
+    if cik in _FACTS_MEM:
+        return _FACTS_MEM[cik]
+    path = os.path.join(CACHE_DIR, f"facts_{cik}.json")
+    on_disk = os.path.exists(path)
+    data = _sec_get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
                     cache_key=f"facts_{cik}")
+    if not on_disk:
+        time.sleep(0.1)   # SEC politeness only on an actual network fetch (<10/s)
+    _FACTS_MEM[cik] = data
+    return data
 
 
 # XBRL concept -> the fallback tags companies actually use (first hit wins).
@@ -403,7 +414,23 @@ FACTOR_DIR = {
 }
 
 
-def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-01"), horizon_years=3):
+def sp500_nonfin():
+    """Full current S&P 500 minus Financials/Real Estate (different XBRL tags) — the wide universe.
+    Still survivorship-biased to TODAY's membership (flagged), but ~3.5x the hand-picked list."""
+    import pandas as pd, urllib.request, io
+    try:
+        req = urllib.request.Request("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+                                     headers={"User-Agent": "Mozilla/5.0 research"})
+        html = urllib.request.urlopen(req, timeout=30).read().decode("utf-8")
+        df = pd.read_html(io.StringIO(html))[0]
+        nf = df[~df["GICS Sector"].isin(["Financials", "Real Estate"])]
+        return [str(s).replace(".", "-").upper() for s in nf["Symbol"].tolist()]
+    except Exception:
+        return list(UNIVERSE)
+
+
+def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-01"),
+                   horizon_years=3, universe=None):
     """For each cohort date, score every name PIT and measure its forward return over a FIXED
     horizon, then Spearman-rank-correlate each factor with forward return. Averaging the sign and
     size of that correlation ACROSS cohorts separates factors that robustly work from ones that
@@ -412,7 +439,7 @@ def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-0
     import yfinance as yf
 
     cmap = cik_map()
-    tickers = [t for t in UNIVERSE if t in cmap]
+    tickers = [t for t in (universe or UNIVERSE) if t in cmap]
     px = yf.download(tickers, start="2013-06-01", progress=False, auto_adjust=True, actions=True)
     close = px["Close"]
 
@@ -431,7 +458,6 @@ def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-0
         rows = []
         for tk in tickers:
             facts = company_facts(cmap[tk])
-            time.sleep(0.02)
             if not facts:
                 continue
             ff = pit_fundamentals(facts, asof)
@@ -466,34 +492,41 @@ def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-0
                 corrs[fac] = c * FACTOR_DIR[fac]   # orient: + means "worked as intended"
         per_cohort[asof] = {"n": len(df), "end": end, "corrs": corrs}
 
-    # Aggregate across cohorts: mean oriented-correlation + how many cohorts it was positive.
+    # Aggregate across cohorts: mean oriented-IC, its dispersion, a t-stat, and hit rate. With
+    # NON-overlapping annual cohorts the per-year ICs are ~independent, so t = mean*sqrt(n)/std is
+    # a fair significance gauge (|t|>2 ~ 95%). With overlapping cohorts treat t as indicative only.
+    import statistics as _st
     summary = []
     for fac in factors:
         vals = [per_cohort[c]["corrs"].get(fac) for c in cohorts if fac in per_cohort[c]["corrs"]]
         vals = [v for v in vals if v is not None]
-        if vals:
-            summary.append({"factor": fac, "mean_ic": sum(vals) / len(vals),
-                            "pos_cohorts": sum(1 for v in vals if v > 0), "n_cohorts": len(vals),
-                            "per": [round(v, 2) for v in vals]})
+        if len(vals) >= 2:
+            m = sum(vals) / len(vals)
+            sd = _st.pstdev(vals) or 1e-9
+            t = m * (len(vals) ** 0.5) / sd
+            summary.append({"factor": fac, "mean_ic": m, "t": t, "sd": sd,
+                            "pos_cohorts": sum(1 for v in vals if v > 0), "n_cohorts": len(vals)})
     summary.sort(key=lambda r: r["mean_ic"], reverse=True)
     return summary, per_cohort
 
 
-def print_efficacy(summary, per_cohort, cohorts):
-    print("=" * 78)
-    print("FACTOR EFFICACY — oriented Spearman rank-IC vs 3-yr forward return, by cohort")
-    print("(+ = the factor predicted returns in the direction our engine assumes; - = it hurt)")
-    print("=" * 78)
-    hdr = "  ".join(c[:4] for c in cohorts)
-    for asof in cohorts:
-        d = per_cohort[asof]
-        print(f"  cohort {asof} -> {d['end']}: {d['n']} names")
-    print(f"\n{'factor':14} {'mean IC':>8} {'+cohorts':>9}   per-cohort [{hdr}]")
-    print("-" * 78)
+def print_efficacy(summary, per_cohort, cohorts, horizon_years=3):
+    n_names = int(sum(per_cohort[c]["n"] for c in cohorts) / max(len(cohorts), 1))
+    print("=" * 74)
+    print(f"FACTOR EFFICACY — oriented rank-IC vs {horizon_years}-yr forward return")
+    print(f"{len(cohorts)} cohorts ({cohorts[0][:4]}-{cohorts[-1][:4]}) · ~{n_names} names/cohort · "
+          f"(+ = worked as the engine assumes; - = inverted)")
+    print("=" * 74)
+    print(f"\n{'factor':14} {'mean IC':>8} {'t-stat':>7} {'hit rate':>9}")
+    print("-" * 74)
     for r in summary:
-        flag = "  <-- robust" if (r["pos_cohorts"] == r["n_cohorts"] and r["mean_ic"] > 0.05) else \
-               ("  <-- INVERTED" if r["mean_ic"] < -0.03 else "")
-        print(f"{r['factor']:14} {r['mean_ic']:+8.3f} {r['pos_cohorts']}/{r['n_cohorts']:<7} {str(r['per']):>28}{flag}")
+        sig = "***" if abs(r["t"]) >= 3 else "**" if abs(r["t"]) >= 2 else "*" if abs(r["t"]) >= 1.5 else ""
+        flag = "  <-- robust" if (r["mean_ic"] > 0.03 and r["t"] >= 2) else \
+               ("  <-- INVERTED" if (r["mean_ic"] < -0.02 and r["t"] <= -1.5) else "")
+        print(f"{r['factor']:14} {r['mean_ic']:+8.3f} {r['t']:+7.2f}{sig:<3} "
+              f"{r['pos_cohorts']:>2}/{r['n_cohorts']:<2}{flag}")
+    print("\n* |t|>=1.5  ** |t|>=2 (~95%)  *** |t|>=3.  Annual cohorts on a 1-yr horizon are")
+    print("non-overlapping, so these t-stats are fair; 3-yr horizons overlap (indicative only).")
 
 
 if __name__ == "__main__":
@@ -502,7 +535,17 @@ if __name__ == "__main__":
     if mode == "efficacy":
         cohorts = ("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-01")
         summary, per_cohort = efficacy_study(cohorts=cohorts, horizon_years=3)
-        print_efficacy(summary, per_cohort, cohorts)
+        print_efficacy(summary, per_cohort, cohorts, 3)
+    elif mode == "wide":
+        # Widened, more rigorous test: full S&P 500 non-financials, 10 non-overlapping annual
+        # cohorts on a 1-yr horizon (valid t-stats), plus a 3-yr horizon pass for robustness.
+        uni = sp500_nonfin()
+        print(f"Wide universe: {len(uni)} S&P 500 non-financials\n")
+        annual = tuple(f"{y}-01-01" for y in range(2014, 2024))
+        for hz in (1, 3):
+            summary, per_cohort = efficacy_study(cohorts=annual, horizon_years=hz, universe=uni)
+            print_efficacy(summary, per_cohort, annual, hz)
+            print()
     else:
         asof = sys.argv[1] if len(sys.argv) > 1 else "2020-01-01"
         df, spy_ret, last_date, dropped = run_backtest(asof=asof)
