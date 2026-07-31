@@ -2616,10 +2616,51 @@ SECTOR_MARGIN_BANDS = {
 DEFAULT_MARGIN_BANDS = {"gross": (0.15, 0.65), "operating": (0.04, 0.32), "profit": (0.02, 0.22), "fcf": (0.00, 0.25)}
 
 
-def margin_bands(sector):
-    """Sector-normal (poor, excellent) margin ranges for sector-relative quality scoring; falls back
-    to market-wide bands for unknown or financial sectors."""
-    return SECTOR_MARGIN_BANDS.get(str(sector), DEFAULT_MARGIN_BANDS)
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _industry_margin_bands(_sig):
+    """Self-calibrating (poor, excellent) margin bands per Yahoo INDUSTRY, derived from the saved
+    scan — the 20th/80th percentile of each margin among the industry's peers. This solves the
+    bimodal-sector problem: 'Discount Stores' (Costco/Walmart, thin margins) and 'Beverages'
+    (Coca-Cola, fat margins) are separate industries, so each company is graded against true peers
+    rather than a broad sector average. Only industries with >=5 peers on a margin get a data band;
+    everything else falls back to the sector band. Keyed to the scan-file signature."""
+    import pandas as pd
+    out = {}
+    df = _load_scored(_sig)
+    if df is None or df.empty or "Industry" not in df.columns:
+        return out
+    cols = {"gross": "Gross Margin %", "operating": "Operating Margin %",
+            "profit": "Profit Margin %", "fcf": "FCF Margin %"}
+    for industry, g in df.groupby("Industry"):
+        if len(g) < 5:
+            continue
+        band = {}
+        for key, col in cols.items():
+            if col not in g.columns:
+                continue
+            vals = pd.to_numeric(g[col], errors="coerce").dropna() / 100.0   # stored %, want fraction
+            if len(vals) < 5:
+                continue
+            lo, hi = float(vals.quantile(0.20)), float(vals.quantile(0.80))
+            if hi - lo < 0.02:       # avoid a degenerate band that pins everyone to 0/100
+                hi = lo + 0.05
+            band[key] = (round(lo, 4), round(hi, 4))
+        if band:
+            out[str(industry)] = band
+    return out
+
+
+def margin_bands(sector, industry=None):
+    """(poor, excellent) margin bands for SECTOR/INDUSTRY-relative quality scoring. Prefers the
+    data-derived INDUSTRY band (per margin, from the scan), then the hand-set SECTOR band, then the
+    market-wide default — so a company is graded against the narrowest real peer group available."""
+    base = SECTOR_MARGIN_BANDS.get(str(sector), DEFAULT_MARGIN_BANDS)
+    if not industry:
+        return base
+    ib = _industry_margin_bands(_scan_sig()).get(str(industry))
+    if not ib:
+        return base
+    return {k: ib.get(k, base[k]) for k in base}   # industry band per margin, else sector fallback
 
 
 @st.cache_data(ttl=12 * 3600, show_spinner=False)
@@ -2788,10 +2829,11 @@ def get_quant_score(ticker):
     # significantly INVERTED (t=-3.1), operating margin badly inverted (t=-7.0), and ROIC was flat
     # (no predictive power). So quality now leads with gross + FCF margin and keeps ROE/op-margin/
     # ROIC only as minor business-quality descriptors, not return bets.
-    # Margins scored SECTOR-RELATIVE (against sector-normal bands) so a low-margin sector isn't
-    # structurally penalized; ROIC and ROE stay absolute (return-on-capital is comparable across
-    # sectors and shouldn't be graded on a curve).
-    _mb = margin_bands(sector)
+    # Margins scored INDUSTRY-RELATIVE where peer data exists (else sector, else market): a company
+    # is graded against its true peer group, so low-margin businesses aren't structurally penalized
+    # and bimodal sectors (Discount Stores vs Beverages) are separated. ROIC and ROE stay absolute
+    # (return-on-capital is comparable across sectors and shouldn't be graded on a curve).
+    _mb = margin_bands(sector, industry)
     quality_score = (
         safe_score(fcf_margin, *_mb["fcf"]) * 0.26 +
         safe_score(gross_margin, *_mb["gross"]) * 0.22 +
