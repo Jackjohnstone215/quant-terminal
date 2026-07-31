@@ -645,6 +645,91 @@ def _summarize_picks(df, spy_ret, last_date, asof, n, rank_by, label):
     return {"avg": avg, "med": med, "final": final, "nbeat": nbeat}
 
 
+def rolling_backtest(years=range(2016, 2025), n=20, universe=None):
+    """For each start year, rank the S&P point-in-time by BOTH engines, hold the top n to today, and
+    compare to SPY. One price download, facts cached in memory. Also reports the revised score's IC
+    that year (prediction quality) and how much of the top-n's edge is the single best name (tail
+    dependence). Returns a list of per-year dicts."""
+    import pandas as pd
+    import yfinance as yf
+    import statistics as st
+    universe = universe or sp500_nonfin()
+    cmap = cik_map()
+    tickers = [t for t in universe if t in cmap]
+    px = yf.download(tickers + ["SPY"], start="2013-06-01", progress=False, auto_adjust=True, actions=True)
+    close = px["Close"]
+    last_date = close.index[-1].strftime("%Y-%m-%d")
+    p_now = {tk: safe_float(close[tk].dropna().iloc[-1]) for tk in close.columns if tk in close.columns}
+
+    def px_at(tk, d):
+        return price_on_or_after(close[tk].dropna().to_frame("Close"), d) if tk in close.columns else None
+
+    def split_after(tk, d):
+        sf = 1.0
+        if "Stock Splits" in px.columns.get_level_values(0) and tk in px["Stock Splits"].columns:
+            ss = px["Stock Splits"][tk]
+            idx = ss.index.tz_localize(None) if ss.index.tz is not None else ss.index
+            for v in ss[(idx > pd.Timestamp(d)) & (ss > 0)].values:
+                sf *= float(v)
+        return sf
+
+    out = []
+    for y in years:
+        asof = f"{y}-01-01"
+        spy0 = px_at("SPY", asof)
+        spy_ret = (p_now.get("SPY") / spy0 - 1) * 100 if (spy0 and p_now.get("SPY")) else None
+        rows = []
+        for tk in tickers:
+            facts = company_facts(cmap[tk])
+            if not facts:
+                continue
+            ff = pit_fundamentals(facts, asof)
+            p0, sh = px_at(tk, asof), shares_asof(facts, asof)
+            if not p0 or not sh or ff.get("net_income") is None or ff.get("revenue") is None:
+                continue
+            feat = pit_features(ff, p0 * sh * split_after(tk, asof))
+            if feat["coverage"] < 4 or not p_now.get(tk):
+                continue
+            feat["Ticker"], feat["ret"] = tk, (p_now[tk] / p0 - 1) * 100
+            rows.append(feat)
+        df = pd.DataFrame(rows)
+        if df.empty or spy_ret is None:
+            continue
+        ic = df["revised"].rank().corr(df["ret"].rank())
+        rec = {"year": y, "horizon": round((pd.Timestamp(last_date) - pd.Timestamp(asof)).days / 365.0, 1),
+               "n": len(df), "spy": spy_ret, "ic_revised": ic}
+        for eng, col in (("new", "revised"), ("old", "composite")):
+            top = df.sort_values(col, ascending=False).head(n)
+            rets = sorted(top["ret"].tolist(), reverse=True)
+            avg = sum(rets) / len(rets)
+            ex_top = (sum(rets) - rets[0]) / (len(rets) - 1)   # avg excluding the single best name
+            rec[eng] = {"avg": avg, "med": st.median(rets), "beat": sum(1 for r in rets if r > spy_ret),
+                        "ex_top_avg": ex_top, "best": rets[0]}
+        out.append(rec)
+    return out, last_date
+
+
+def print_rolling(out, last_date):
+    print(f"\n{'=' * 82}")
+    print(f"ROLLING YEAR-BY-YEAR: top 20 held to {last_date}. NEW engine vs OLD vs SPY.")
+    print(f"{'=' * 82}")
+    print(f"{'start':>5} {'yrs':>4} {'names':>5} {'SPY%':>7} | {'NEW avg':>8} {'med':>6} {'beat':>5} "
+          f"{'exTop':>7} {'vsSPY':>7} | {'OLD avg':>8} | {'IC':>6}")
+    print("-" * 82)
+    for r in out:
+        nw, od = r["new"], r["old"]
+        ex = nw["avg"] - r["spy"]
+        print(f"{r['year']:>5} {r['horizon']:>4} {r['n']:>5} {r['spy']:>+7.0f} | "
+              f"{nw['avg']:>+8.0f} {nw['med']:>+6.0f} {nw['beat']:>3}/20 {nw['ex_top_avg']:>+7.0f} "
+              f"{ex:>+7.0f} | {od['avg']:>+8.0f} | {r['ic_revised']:>+6.2f}")
+    wins = sum(1 for r in out if r["new"]["avg"] > r["spy"])
+    new_wins_old = sum(1 for r in out if r["new"]["avg"] > r["old"]["avg"])
+    print("-" * 82)
+    print(f"NEW beat SPY (avg): {wins}/{len(out)} start-years · NEW beat OLD: {new_wins_old}/{len(out)}")
+    print("exTop = top-20 avg EXCLUDING each cohort's single best name (tail-dependence check).")
+    print("IC = revised score's rank correlation with return-to-today that year (prediction quality).")
+
+
 def print_efficacy(summary, per_cohort, cohorts, horizon_years=3):
     n_names = int(sum(per_cohort[c]["n"] for c in cohorts) / max(len(cohorts), 1))
     print("=" * 74)
@@ -671,6 +756,9 @@ if __name__ == "__main__":
         cohorts = ("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-01")
         summary, per_cohort = efficacy_study(cohorts=cohorts, horizon_years=3)
         print_efficacy(summary, per_cohort, cohorts, 3)
+    elif mode == "rolling":
+        out, last_date = rolling_backtest(years=range(2016, 2025), n=20)
+        print_rolling(out, last_date)
     elif mode == "topn":
         asof = sys.argv[2] if len(sys.argv) > 2 else "2016-01-01"
         n = int(sys.argv[3]) if len(sys.argv) > 3 else 20
