@@ -410,6 +410,7 @@ FACTOR_DIR = {
     "composite": +1, "revised": +1, "quality": +1, "valuation": +1, "growth": +1, "health": +1,
     "roic": +1, "roe": +1, "net_margin": +1, "gross_margin": +1, "op_margin": +1,
     "fcf_margin": +1, "rev_growth": +1, "ni_growth": +1, "size_mktcap": +1,
+    "div_yield": +1,   # hypothesis under test: does a HIGHER dividend yield predict higher returns?
     "pe": -1, "pb": -1, "leverage_de": -1,   # the engine treats LOW P/E, P/B, leverage as good
 }
 
@@ -442,6 +443,22 @@ def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-0
     tickers = [t for t in (universe or UNIVERSE) if t in cmap]
     px = yf.download(tickers, start="2013-06-01", progress=False, auto_adjust=True, actions=True)
     close = px["Close"]
+    divs = px["Dividends"] if "Dividends" in px.columns.get_level_values(0) else None
+
+    def ttm_div_yield(tk, asof):
+        """Trailing-12-month dividends per share / price at T — point-in-time, no lookahead. A
+        non-payer returns 0.0 (so it's ranked as low-yield, not dropped). Div and price are both
+        split-adjusted, so the ratio is correct."""
+        p0 = price_on_or_after(close[tk].dropna().to_frame("Close"), asof) if tk in close.columns else None
+        if not p0:
+            return None
+        if divs is None or tk not in divs.columns:
+            return 0.0
+        s = divs[tk]
+        idx = s.index.tz_localize(None) if s.index.tz is not None else s.index
+        lo = pd.Timestamp(asof) - pd.Timedelta(days=365)
+        ttm = s[(idx > lo) & (idx <= pd.Timestamp(asof)) & (s > 0)].sum()
+        return float(ttm) / p0 if ttm > 0 else 0.0
 
     def fwd(tk, start, end):
         if tk not in close.columns:
@@ -478,6 +495,7 @@ def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-0
             feat = pit_features(ff, mc)
             if feat["coverage"] < 4:
                 continue
+            feat["div_yield"] = ttm_div_yield(tk, asof)
             feat["fwd"] = fwd(tk, asof, end)
             feat["Ticker"] = tk
             rows.append(feat)
