@@ -411,7 +411,8 @@ FACTOR_DIR = {
     "roic": +1, "roe": +1, "net_margin": +1, "gross_margin": +1, "op_margin": +1,
     "fcf_margin": +1, "rev_growth": +1, "ni_growth": +1, "size_mktcap": +1,
     "div_yield": +1,   # hypothesis under test: does a HIGHER dividend yield predict higher returns?
-    "pe": -1, "pb": -1, "leverage_de": -1,   # the engine treats LOW P/E, P/B, leverage as good
+    "momentum": +1, "rel_strength": +1, "composite_v3": +1,   # price factors + evidence composite
+    "pe": -1, "pb": -1, "leverage_de": -1, "low_vol": -1,   # LOW P/E, P/B, leverage, volatility = good
 }
 
 
@@ -441,9 +442,39 @@ def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-0
 
     cmap = cik_map()
     tickers = [t for t in (universe or UNIVERSE) if t in cmap]
-    px = yf.download(tickers, start="2013-06-01", progress=False, auto_adjust=True, actions=True)
+    px = yf.download(tickers + ["SPY"], start="2013-06-01", progress=False, auto_adjust=True, actions=True)
     close = px["Close"]
     divs = px["Dividends"] if "Dividends" in px.columns.get_level_values(0) else None
+    spy = close["SPY"].dropna() if "SPY" in close.columns else None
+
+    def _px_at(tk, d):
+        return price_on_or_after(close[tk].dropna().to_frame("Close"), d) if tk in close.columns else None
+
+    def momentum_12_1(tk, asof):
+        """Classic 12-1 momentum: return from T-12mo to T-1mo (skip the last month to avoid short-
+        term reversal). The single strongest factor in the academic literature — untested here until now."""
+        a = _px_at(tk, (pd.Timestamp(asof) - pd.Timedelta(days=365)).strftime("%Y-%m-%d"))
+        b = _px_at(tk, (pd.Timestamp(asof) - pd.Timedelta(days=30)).strftime("%Y-%m-%d"))
+        return (b / a - 1) if (a and b) else None
+
+    def rel_strength_12m(tk, asof):
+        """Trailing-12mo return MINUS SPY's — outperformance vs the market."""
+        st = (pd.Timestamp(asof) - pd.Timedelta(days=365)).strftime("%Y-%m-%d")
+        a, b = _px_at(tk, st), _px_at(tk, asof)
+        if spy is None or not (a and b):
+            return None
+        sa = price_on_or_after(spy.to_frame("Close"), st)
+        sb = price_on_or_after(spy.to_frame("Close"), asof)
+        return (b / a - sb / sa) if (sa and sb) else None
+
+    def vol_12m(tk, asof):
+        """Trailing-12mo daily-return volatility (the low-volatility factor; lower has paid off)."""
+        if tk not in close.columns:
+            return None
+        s = close[tk].dropna()
+        idx = s.index.tz_localize(None) if s.index.tz is not None else s.index
+        win = s[(idx > pd.Timestamp(asof) - pd.Timedelta(days=365)) & (idx <= pd.Timestamp(asof))]
+        return float(win.pct_change().dropna().std()) if len(win) >= 60 else None
 
     def ttm_div_yield(tk, asof):
         """Trailing-12-month dividends per share / price at T — point-in-time, no lookahead. A
@@ -496,6 +527,23 @@ def efficacy_study(cohorts=("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-0
             if feat["coverage"] < 4:
                 continue
             feat["div_yield"] = ttm_div_yield(tk, asof)
+            mom, rs, vol = momentum_12_1(tk, asof), rel_strength_12m(tk, asof), vol_12m(tk, asof)
+            feat["momentum"] = mom
+            feat["rel_strength"] = rs
+            feat["low_vol"] = vol
+            # Evidence-weighted composite: the winners from this study — revenue growth, FCF/gross
+            # margin, low leverage, small size — PLUS the price factors the fundamental engine
+            # underweights (momentum, low volatility). This is the "what history says a ranking
+            # should look like" candidate, to compare against the old and revised composites.
+            feat["composite_v3"] = round(clamp(
+                safe_score(feat.get("rev_growth"), -0.03, 0.30) * 0.20 +
+                safe_score(feat.get("fcf_margin"), 0.0, 0.25) * 0.12 +
+                safe_score(feat.get("gross_margin"), 0.15, 0.65) * 0.08 +
+                safe_score(feat.get("leverage_de"), 0.2, 2.2, reverse=True) * 0.10 +
+                safe_score(mc, 8e9, 6e11, reverse=True) * 0.08 +
+                safe_score(mom, -0.10, 0.60) * 0.28 +
+                safe_score(vol, 0.010, 0.045, reverse=True) * 0.14
+            ), 1)
             feat["fwd"] = fwd(tk, asof, end)
             feat["Ticker"] = tk
             rows.append(feat)
