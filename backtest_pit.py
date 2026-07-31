@@ -736,45 +736,47 @@ def rolling_backtest(years=range(2016, 2025), n=20, universe=None):
         df = pd.DataFrame(rows)
         if df.empty or spy_ret is None:
             continue
-        ic = df["revised"].rank().corr(df["ret"].rank())
+        # Blend the new (growth-tilted) and old (value-tilted) engines by within-cohort percentile
+        # rank, so the two different score scales combine cleanly. Test a couple of mixes.
+        rn, ro = df["revised"].rank(pct=True), df["composite"].rank(pct=True)
+        df["blend50"] = 0.50 * rn + 0.50 * ro
+        df["blend65"] = 0.65 * rn + 0.35 * ro
+        ic = rn.corr(df["ret"].rank())
         rec = {"year": y, "horizon": round((pd.Timestamp(last_date) - pd.Timestamp(asof)).days / 365.0, 1),
-               "n": len(df), "spy": spy_ret, "ic_revised": ic, "rate": rate_at(asof), "grw": round(grw, 2)}
-        for eng, col in (("new", "revised"), ("regime", "regime"), ("old", "composite")):
+               "n": len(df), "spy": spy_ret, "ic_revised": ic, "rate": rate_at(asof)}
+        for eng, col in (("new", "revised"), ("bl65", "blend65"), ("bl50", "blend50"), ("old", "composite")):
             top = df.sort_values(col, ascending=False).head(n)
-            rets = sorted(top["ret"].tolist(), reverse=True)
-            avg = sum(rets) / len(rets)
-            ex_top = (sum(rets) - rets[0]) / (len(rets) - 1)   # avg excluding the single best name
-            rec[eng] = {"avg": avg, "med": st.median(rets), "beat": sum(1 for r in rets if r > spy_ret),
-                        "ex_top_avg": ex_top, "best": rets[0]}
+            rets = top["ret"].tolist()
+            rec[eng] = {"avg": sum(rets) / len(rets), "med": st.median(rets),
+                        "beat": sum(1 for r in rets if r > spy_ret)}
         out.append(rec)
     return out, last_date
 
 
 def print_rolling(out, last_date):
-    print(f"\n{'=' * 86}")
-    print(f"ROLLING YEAR-BY-YEAR: top 20 held to {last_date}. NEW vs REGIME (growth dampener) vs OLD vs SPY.")
-    print(f"{'=' * 86}")
-    print(f"{'start':>5} {'yrs':>4} {'10yr':>5} {'grw':>4} {'SPY%':>6} | {'NEW':>6} {'REGIME':>7} "
-          f"{'OLD':>6} | {'best engine':>12}")
-    print("-" * 86)
+    import statistics as st
+    engines = [("NEW", "new"), ("BL65", "bl65"), ("BL50", "bl50"), ("OLD", "old")]
+    print(f"\n{'=' * 78}")
+    print(f"BLEND TEST: top 20 held to {last_date}. NEW (growth) vs BLEND vs OLD (value) vs SPY.")
+    print(f"BL65 = 65% new / 35% old by rank; BL50 = 50/50.")
+    print(f"{'=' * 78}")
+    print(f"{'start':>5} {'yrs':>4} {'SPY%':>6} | " + " ".join(f"{nm:>6}" for nm, _ in engines) + " | best")
+    print("-" * 78)
     for r in out:
-        nw, rg, od = r["new"]["avg"], r["regime"]["avg"], r["old"]["avg"]
-        best = max([("NEW", nw), ("REGIME", rg), ("OLD", od)], key=lambda x: x[1])[0]
-        rate = f"{r.get('rate'):.1f}" if r.get("rate") is not None else "  ?"
-        print(f"{r['year']:>5} {r['horizon']:>4} {rate:>5} {r.get('grw', 0):>4.2f} {r['spy']:>+6.0f} | "
-              f"{nw:>+6.0f} {rg:>+7.0f} {od:>+6.0f} | {best:>12}")
-    print("-" * 86)
+        vals = [(nm, r[k]["avg"]) for nm, k in engines]
+        best = max(vals, key=lambda x: x[1])[0]
+        print(f"{r['year']:>5} {r['horizon']:>4} {r['spy']:>+6.0f} | "
+              + " ".join(f"{v:>+6.0f}" for _, v in vals) + f" | {best}")
+    print("-" * 78)
     n = len(out)
-    print(f"beat SPY (avg):   NEW {sum(1 for r in out if r['new']['avg']>r['spy'])}/{n}  "
-          f"REGIME {sum(1 for r in out if r['regime']['avg']>r['spy'])}/{n}  "
-          f"OLD {sum(1 for r in out if r['old']['avg']>r['spy'])}/{n}")
-    print(f"REGIME beat NEW:  {sum(1 for r in out if r['regime']['avg']>r['new']['avg'])}/{n} start-years "
-          f"(the growth dampener's net effect)")
-    # Did the dampener help in the high-rate cohorts specifically?
-    hi = [r for r in out if (r.get("rate") or 0) >= 3.0]
-    if hi:
-        rw = sum(1 for r in hi if r["regime"]["avg"] > r["new"]["avg"])
-        print(f"  in high-rate starts (10yr>=3%): REGIME beat NEW {rw}/{len(hi)} — where the dampener should matter.")
+    print(f"\n{'engine':>6} {'beatSPY':>8} {'mean excess':>12} {'FLOOR (worst)':>14} {'consistency(sd)':>16}")
+    print("-" * 78)
+    for nm, k in engines:
+        ex = [r[k]["avg"] - r["spy"] for r in out]          # excess over SPY per cohort
+        beat = sum(1 for e in ex if e > 0)
+        print(f"{nm:>6} {beat:>6}/{n} {sum(ex)/len(ex):>+11.0f} {min(ex):>+13.0f} {st.pstdev(ex):>15.0f}")
+    print("\nFLOOR = the engine's WORST cohort vs SPY (higher = better downside). A good blend should")
+    print("lift the floor (old's strength) without gutting the mean (new's strength).")
 
 
 def print_efficacy(summary, per_cohort, cohorts, horizon_years=3):
