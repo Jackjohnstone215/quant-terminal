@@ -805,6 +805,17 @@ if __name__ == "__main__":
         cohorts = ("2015-01-01", "2017-01-01", "2019-01-01", "2021-01-01")
         summary, per_cohort = efficacy_study(cohorts=cohorts, horizon_years=3)
         print_efficacy(summary, per_cohort, cohorts, 3)
+    elif mode == "current":
+        asof = sys.argv[2] if len(sys.argv) > 2 else "2026-07-20"
+        df, _, last_date = top_picks_backtest(asof=asof, n=20)
+        top = df.sort_values("revised", ascending=False).head(20).reset_index(drop=True)
+        print(f"CURRENT TOP 20 — new engine (revised fundamental core), fundamentals as of latest filings <= {asof}")
+        print(f"{'#':>2} {'Ticker':7}{'score':>6}{'P/E':>7}{'rev growth':>11}{'ROIC':>7}")
+        for i, r in top.iterrows():
+            pe = f"{r['pe']:.0f}" if r.get('pe') and r['pe'] > 0 else "n/a"
+            rg = f"{r['rev_growth']*100:+.0f}%" if r.get('rev_growth') is not None else "n/a"
+            rc = f"{r['roic']*100:.0f}%" if r.get('roic') is not None else "n/a"
+            print(f"{i+1:>2} {r['Ticker']:7}{r['revised']:>6.1f}{pe:>7}{rg:>11}{rc:>7}")
     elif mode == "rolling":
         y0 = int(sys.argv[2]) if len(sys.argv) > 2 else 2011
         out, last_date = rolling_backtest(years=range(y0, 2025), n=20)
