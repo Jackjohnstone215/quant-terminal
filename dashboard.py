@@ -734,6 +734,7 @@ def normalize_scores_df(df):
         "Earnings Quality Score": 0.0,
         "Relative Strength Score": 0.0,
         "Size Score": 0.0,
+        "Fundamental Core Score": 0.0,
         "Labels": "General Watchlist",
         "Verdict": "Watchlist only",
         "Research Action": "Research only",
@@ -752,7 +753,8 @@ def normalize_scores_df(df):
         "Investment Score", "Opportunity Score", "Position Trade Score", "Health Score",
         "Expected Return Score", "Overall Quant Score", "Quality Score", "Valuation Score",
         "Growth Score", "Cash Flow Score", "Financial Strength Score", "Momentum Score",
-        "Risk Score", "Earnings Quality Score", "Relative Strength Score", "Size Score", "Conviction Score", "Evidence Score", "Research Priority"
+        "Risk Score", "Earnings Quality Score", "Relative Strength Score", "Size Score",
+        "Fundamental Core Score", "Conviction Score", "Evidence Score", "Research Priority"
     ]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
@@ -3012,6 +3014,21 @@ def get_quant_score(ticker):
         expected_return_score * 0.10
     )
 
+    # Validated Fundamental Core — the EXACT backtested 'revised' composite (backtest_pit.py) that
+    # beat the S&P in 13 of 14 rolling start-years, 2011-2024. Pure fundamentals: revenue-growth-led,
+    # FCF + gross margin, low leverage, some ROIC, and only a mild P/E penalty at extremes (no reward
+    # for raw cheapness). Deliberately EXCLUDES momentum / news / analyst — the efficacy study found
+    # those don't predict returns. This is the ranking the 15-year historical validation actually used.
+    fundamental_core_score = clamp(
+        safe_score(revenue_growth, -0.03, 0.30) * 0.28 +
+        safe_score(gross_margin, 0.20, 0.70) * 0.16 +
+        safe_score(fcf_margin, 0.00, 0.25) * 0.16 +
+        safe_score(roic_proxy, 0.05, 0.20) * 0.12 +
+        safe_score(debt_to_equity, 20, 220, reverse=True) * 0.10 +
+        safe_score(earnings_growth, -0.05, 0.30) * 0.08 +
+        safe_score(pe if (pe and pe > 0) else 45, 15, 80, reverse=True) * 0.10
+    )
+
     if overall_quant_score >= 85 and opportunity_score >= 70:
         research_action = "Research Now"
     elif investment_score >= 85 and valuation_score < 55:
@@ -3129,6 +3146,7 @@ def get_quant_score(ticker):
         "Sell Target": round(sell_target, 2) if sell_target else None,
         "Suggested Hold": hold_period,
         "Overall Quant Score": round(overall_quant_score, 1),
+        "Fundamental Core Score": round(fundamental_core_score, 1),
         "Overall Grade": grade(overall_quant_score),
         "Tier": tier(overall_quant_score),
         "Investment Score": round(investment_score, 1),
@@ -5830,7 +5848,28 @@ def opportunity_engine():
         if df.empty:
             st.warning("No saved quant scan yet. Use the Run / Update Quant Scan tab first.")
             return
+
+        st.subheader("🔬 Validated Fundamental Core — the backtested ranking")
+        st.caption("Ranked by the pure fundamental score that beat the S&P 500 in **13 of 14** rolling "
+                   "start-years (2011–2024): revenue-growth-led, FCF + margin quality, low leverage, and only "
+                   "a mild P/E penalty at extremes. It deliberately **ignores momentum/news/analyst** — our "
+                   "15-year study found those don't predict returns. This is the exact ranking the historical "
+                   "validation used. Best treated as a diversified **15–20 name basket held for years**, not "
+                   "one or two conviction bets (the edge is in the tail — the typical single pick lags the index).")
+        if "Fundamental Core Score" in df.columns and df["Fundamental Core Score"].fillna(0).gt(0).any():
+            core_cols = [c for c in ["Ticker", "Company", "Sector", "Fundamental Core Score",
+                                     "Overall Quant Score", "P/E", "ROIC Proxy %", "Upside %", "Price"]
+                         if c in df.columns]
+            st.dataframe(df.sort_values("Fundamental Core Score", ascending=False).head(25)[core_cols],
+                         width="stretch", hide_index=True)
+        else:
+            st.info("This saved scan predates the fundamental-core score. Run **Run / Update Quant Scan** "
+                    "(next tab) to regenerate scores with the new engine and populate this ranking.")
+        st.divider()
+
         st.subheader("Best Overall Research Priorities")
+        st.caption("The full engine's blended ranking (adds momentum, news, analyst, and risk on top of "
+                   "fundamentals). Broader, but less validated than the fundamental core above.")
         st.dataframe(df.sort_values("Research Priority", ascending=False).head(25), width="stretch")
 
         st.subheader("Opportunity Map")
@@ -6935,9 +6974,9 @@ def backtesting_page():
     st.caption("Does the engine's ranking actually predict future returns? Test it honestly here.")
 
     score_choices = [
-        "Overall Quant Score", "Investment Score", "Opportunity Score", "Position Trade Score",
-        "Health Score", "Expected Return Score", "Quality Score", "Cash Flow Score",
-        "Valuation Score", "Growth Score", "Relative Strength Score", "Risk Score",
+        "Fundamental Core Score", "Overall Quant Score", "Investment Score", "Opportunity Score",
+        "Position Trade Score", "Health Score", "Expected Return Score", "Quality Score",
+        "Cash Flow Score", "Valuation Score", "Growth Score", "Relative Strength Score", "Risk Score",
     ]
 
     honest_tab, efficacy_tab, illustrative_tab = st.tabs([
