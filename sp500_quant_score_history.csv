@@ -1371,3 +1371,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-08-03,MSCI,MSCI Inc.,Financial Services,53.2,62.3,49.8,36.5,62.7,53.0,571.5,286.33,-49.9,Tier 4 — Low Priority / Avoid,General Watchlist,36.9,27.5,41.4
 2026-08-03,NDAQ,"Nasdaq, Inc.",Financial Services,53.3,60.2,47.7,45.4,59.0,53.4,93.86,55.18,-41.2,Tier 4 — Low Priority / Avoid,General Watchlist,42.0,27.5,42.8
 2026-08-03,NTAP,"NetApp, Inc.",Technology,60.7,61.5,51.7,73.6,58.7,58.6,182.28,207.42,13.8,Tier 3 — Watchlist Only,General Watchlist,50.5,27.5,47.2
+2026-08-04,NFLX,"Netflix, Inc.",Communication Services,62.8,74.7,64.2,28.2,83.3,61.5,73.04,118.09,61.7,Tier 3 — Watchlist Only,Healthy Business,65.7,25.0,55.6
+2026-08-04,NEM,Newmont Corporation,Basic Materials,76.1,88.2,74.4,48.6,92.1,75.1,97.4,248.97,155.6,Tier 2 — Worth Researching,"Long-Term Compounder, Recovery Candidate, Healthy Business",81.0,62.5,75.2
+2026-08-04,NWSA,News Corporation,Communication Services,54.3,59.0,51.4,46.1,60.3,55.0,28.03,59.93,113.8,Tier 4 — Low Priority / Avoid,General Watchlist,57.4,25.0,48.2
+2026-08-04,NWS,News Corporation,Communication Services,54.1,59.0,51.3,45.2,60.3,54.7,31.93,59.93,87.7,Tier 4 — Low Priority / Avoid,General Watchlist,57.2,25.0,48.1
+2026-08-04,NEE,"NextEra Energy, Inc.",Utilities,40.4,42.3,36.4,43.8,38.4,41.5,86.33,313.12,262.7,Tier 4 — Low Priority / Avoid,General Watchlist,17.8,0.0,22.1
+2026-08-04,NKE,"Nike, Inc.",Consumer Cyclical,39.7,48.1,37.1,22.9,49.9,39.5,41.65,28.93,-30.5,Tier 4 — Low Priority / Avoid,General Watchlist,33.6,2.5,28.7
+2026-08-04,NI,NiSource Inc,Utilities,33.2,33.9,30.3,36.9,30.2,35.3,44.27,149.59,237.9,Tier 4 — Low Priority / Avoid,General Watchlist,12.6,0.0,17.6
+2026-08-04,NDSN,Nordson Corporation,Industrials,61.2,66.1,53.3,59.0,67.7,60.6,305.64,287.89,-5.8,Tier 3 — Watchlist Only,General Watchlist,59.6,37.5,53.9
+2026-08-04,NSC,Norfolk Southern Corporation,Industrials,47.4,49.5,39.8,52.0,49.8,47.4,338.79,203.49,-39.9,Tier 4 — Low Priority / Avoid,General Watchlist,28.1,2.5,28.5
+2026-08-04,NTRS,Northern Trust Corporation,Financial Services,59.7,63.9,49.7,68.3,57.4,58.7,183.75,137.66,-25.1,Tier 4 — Low Priority / Avoid,General Watchlist,54.4,50.0,54.2
+2026-08-04,NOC,Northrop Grumman Corporation,Industrials,31.7,35.2,28.4,28.6,33.6,33.1,550.12,522.14,-5.1,Tier 4 — Low Priority / Avoid,General Watchlist,30.1,0.0,23.3
+2026-08-04,NCLH,Norwegian Cruise Line Holdings ,Consumer Cyclical,23.2,23.5,23.8,26.5,17.6,22.6,19.98,41.52,107.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,0.0,0.0,9.3
+2026-08-04,NRG,"NRG Energy, Inc.",Utilities,17.7,20.3,17.6,18.6,11.0,18.3,120.86,20.31,-83.2,Tier 4 — Low Priority / Avoid,General Watchlist,0.0,0.0,7.4
+2026-08-04,NUE,Nucor Corporation,Basic Materials,48.3,49.1,38.2,68.7,37.2,47.2,267.54,106.46,-60.2,Tier 4 — Low Priority / Avoid,General Watchlist,38.4,40.0,41.2
+2026-08-04,NVDA,NVIDIA Corporation,Technology,64.9,74.9,57.9,52.0,75.3,62.6,209.91,62.05,-70.4,Tier 3 — Watchlist Only,General Watchlist,56.1,27.5,52.1
+2026-08-04,NVR,"NVR, Inc.",Consumer Cyclical,44.9,51.5,44.3,26.7,56.3,45.6,6238.58,9163.23,46.9,Tier 4 — Low Priority / Avoid,General Watchlist,49.1,12.5,38.9
+2026-08-04,NXPI,NXP Semiconductors N.V.,Technology,63.6,75.3,60.8,41.9,75.5,61.4,235.87,177.09,-24.9,Tier 3 — Watchlist Only,General Watchlist,58.3,52.5,59.4
+2026-08-04,ORLY,"O'Reilly Automotive, Inc.",Consumer Cyclical,41.6,47.3,37.5,33.9,46.8,42.6,90.37,65.02,-28.1,Tier 4 — Low Priority / Avoid,General Watchlist,27.9,0.0,26.5
+2026-08-04,OXY,Occidental Petroleum Corporatio,Energy,50.9,53.0,42.1,57.1,52.7,50.9,55.02,34.3,-37.7,Tier 4 — Low Priority / Avoid,General Watchlist,49.3,12.5,39.6
+2026-08-04,ODFL,"Old Dominion Freight Line, Inc.",Industrials,66.3,73.7,57.2,61.4,74.2,64.7,215.04,156.81,-27.1,Tier 3 — Watchlist Only,General Watchlist,61.4,50.0,59.6
+2026-08-04,OMC,Omnicom Group Inc.,Communication Services,54.7,59.8,52.9,52.7,50.3,55.0,79.14,331.23,318.5,Tier 4 — Low Priority / Avoid,General Watchlist,44.8,15.0,41.6
+2026-08-04,ON,ON Semiconductor Corporation,Technology,53.3,54.5,44.0,64.2,53.2,50.7,80.64,43.77,-45.7,Tier 4 — Low Priority / Avoid,General Watchlist,52.8,40.0,48.1
+2026-08-04,OKE,"ONEOK, Inc.",Energy,33.1,34.3,28.1,44.1,23.9,33.9,86.58,84.45,-2.5,Tier 4 — Low Priority / Avoid,General Watchlist,12.2,5.0,18.2
+2026-08-04,ORCL,Oracle Corporation,Technology,32.0,36.4,28.8,28.0,34.8,30.4,144.92,128.68,-11.2,Tier 4 — Low Priority / Avoid,General Watchlist,6.5,0.0,14.8
+2026-08-04,OTIS,Otis Worldwide Corporation,Industrials,33.5,36.1,32.7,31.1,32.0,34.9,72.8,111.86,53.7,Tier 4 — Low Priority / Avoid,General Watchlist,24.1,2.5,22.8
+2026-08-04,PCAR,PACCAR Inc.,Industrials,39.4,39.3,30.6,52.5,36.1,40.1,133.39,123.63,-7.3,Tier 4 — Low Priority / Avoid,General Watchlist,38.6,15.0,31.8
+2026-08-04,PKG,Packaging Corporation of Americ,Consumer Cyclical,49.7,49.9,44.8,58.5,45.5,50.3,252.88,758.09,199.8,Tier 4 — Low Priority / Avoid,General Watchlist,47.6,25.0,42.2
+2026-08-04,PLTR,Palantir Technologies Inc.,Technology,71.1,82.6,64.5,53.6,84.2,68.2,158.85,29.07,-81.7,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",58.3,52.5,61.7
+2026-08-04,PANW,"Palo Alto Networks, Inc.",Technology,58.6,58.4,46.6,81.3,49.3,57.9,360.52,86.09,-76.1,Tier 4 — Low Priority / Avoid,Position Trade Candidate,55.1,62.5,56.4
+2026-08-04,PSKY,Paramount Skydance Corporation,Communication Services,34.4,39.8,38.9,16.2,40.8,34.2,8.36,69.19,727.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,23.1,5.0,24.3
+2026-08-04,PH,Parker-Hannifin Corporation,Industrials,44.9,46.5,36.9,52.3,45.0,45.2,988.32,733.46,-25.8,Tier 4 — Low Priority / Avoid,General Watchlist,35.9,2.5,30.2
+2026-08-04,PAYX,"Paychex, Inc.",Technology,56.8,59.3,51.0,58.4,60.0,55.8,117.23,278.72,137.7,Tier 4 — Low Priority / Avoid,General Watchlist,44.0,27.5,44.2
+2026-08-04,PYPL,"PayPal Holdings, Inc.",Financial Services,49.1,50.0,43.8,51.9,52.7,48.3,58.02,67.93,17.1,Tier 4 — Low Priority / Avoid,General Watchlist,51.0,37.5,46.0
+2026-08-04,PNR,Pentair plc.,Industrials,41.4,47.7,40.5,23.4,53.9,42.0,67.86,78.09,15.1,Tier 4 — Low Priority / Avoid,Recovery Candidate,43.8,12.5,35.6
+2026-08-04,PEP,"Pepsico, Inc.",Consumer Defensive,46.3,52.7,46.2,31.1,53.5,47.0,138.49,185.13,33.7,Tier 4 — Low Priority / Avoid,General Watchlist,32.6,2.5,31.3
+2026-08-04,PFE,"Pfizer, Inc.",Healthcare,49.8,50.7,44.6,52.4,52.6,50.7,25.31,56.13,121.8,Tier 4 — Low Priority / Avoid,General Watchlist,52.6,37.5,47.2
+2026-08-04,PCG,Pacific Gas & Electric Co.,Utilities,31.7,28.7,26.3,48.4,23.6,32.6,17.41,30.03,72.4,Tier 4 — Low Priority / Avoid,Recovery Candidate,11.0,0.0,15.6
+2026-08-04,PM,Philip Morris International Inc,Consumer Defensive,54.5,59.0,49.2,47.5,63.6,54.9,184.82,207.41,12.2,Tier 4 — Low Priority / Avoid,General Watchlist,42.2,15.0,40.0
+2026-08-04,PSX,Phillips 66,Energy,29.4,19.4,19.2,71.2,9.8,30.8,205.49,416.43,102.6,Tier 4 — Low Priority / Avoid,General Watchlist,10.4,17.5,17.5
+2026-08-04,PNW,Pinnacle West Capital Corporati,Utilities,31.4,28.7,27.1,48.4,20.2,33.2,101.17,447.47,342.3,Tier 4 — Low Priority / Avoid,General Watchlist,11.4,0.0,15.9
+2026-08-04,PNC,"PNC Financial Services Group, I",Financial Services,53.8,56.8,46.1,61.8,50.1,53.7,255.67,289.26,13.1,Tier 4 — Low Priority / Avoid,General Watchlist,47.9,12.5,40.5
+2026-08-04,PPG,"PPG Industries, Inc.",Basic Materials,41.7,45.1,39.8,36.7,43.9,42.4,116.84,149.31,27.8,Tier 4 — Low Priority / Avoid,General Watchlist,39.1,0.0,30.5
+2026-08-04,PPL,PPL Corporation,Utilities,32.9,33.6,30.2,37.8,28.0,35.0,35.14,139.43,296.8,Tier 4 — Low Priority / Avoid,General Watchlist,12.9,0.0,17.7
+2026-08-04,PFG,Principal Financial Group Inc,Financial Services,48.9,48.5,39.2,64.9,44.1,49.5,115.48,109.78,-4.9,Tier 4 — Low Priority / Avoid,General Watchlist,50.4,50.0,48.3
+2026-08-04,PG,Procter & Gamble Company (The),Consumer Defensive,45.8,50.6,40.0,37.0,56.8,46.9,146.37,119.92,-18.1,Tier 4 — Low Priority / Avoid,General Watchlist,45.0,25.0,40.1
+2026-08-04,PGR,Progressive Corporation (The),Financial Services,44.6,48.5,42.1,38.7,48.1,45.9,209.34,310.41,48.3,Tier 4 — Low Priority / Avoid,General Watchlist,43.5,12.5,36.4
+2026-08-04,PLD,"Prologis, Inc.",Real Estate,62.6,66.9,54.4,63.0,67.9,61.7,141.44,143.62,1.5,Tier 3 — Watchlist Only,General Watchlist,45.1,40.0,49.9
+2026-08-04,PRU,"Prudential Financial, Inc.",Financial Services,47.6,46.8,42.5,58.8,42.3,48.1,123.38,152.94,24.0,Tier 4 — Low Priority / Avoid,General Watchlist,39.9,40.0,42.2
+2026-08-04,PEG,Public Service Enterprise Group,Utilities,40.9,45.7,39.7,35.6,39.5,42.4,75.57,331.72,339.0,Tier 4 — Low Priority / Avoid,General Watchlist,19.1,5.0,24.8
+2026-08-04,PTC,PTC Inc.,Technology,57.2,63.7,55.7,36.4,74.7,56.9,140.43,278.94,98.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,60.0,37.5,53.6
+2026-08-04,PSA,Public Storage,Real Estate,61.7,66.4,52.9,59.8,69.8,61.2,324.96,279.97,-13.8,Tier 3 — Watchlist Only,General Watchlist,44.4,40.0,49.3
+2026-08-04,PHM,"PulteGroup, Inc.",Consumer Cyclical,41.1,43.0,37.7,38.5,46.1,41.6,129.84,189.09,45.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,43.6,37.5,40.8
+2026-08-04,PWR,"Quanta Services, Inc.",Industrials,45.6,44.8,35.4,70.5,31.4,45.2,694.32,420.26,-39.5,Tier 4 — Low Priority / Avoid,General Watchlist,31.4,40.0,37.6
+2026-08-04,QCOM,QUALCOMM Incorporated,Technology,50.9,56.4,48.5,36.3,64.2,50.0,160.77,190.23,18.3,Tier 4 — Low Priority / Avoid,Recovery Candidate,49.8,40.0,47.8
+2026-08-04,DGX,Quest Diagnostics Incorporated,Healthcare,43.6,39.7,31.5,73.3,30.9,44.7,233.35,228.19,-2.2,Tier 4 — Low Priority / Avoid,General Watchlist,40.6,37.5,39.0
