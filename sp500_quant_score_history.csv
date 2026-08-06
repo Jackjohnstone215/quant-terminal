@@ -1481,3 +1481,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-08-05,TER,"Teradyne, Inc.",Technology,63.4,67.6,52.4,73.3,61.9,60.5,393.12,160.48,-59.2,Tier 3 — Watchlist Only,General Watchlist,48.7,42.5,51.4
 2026-08-05,TSLA,"Tesla, Inc.",Consumer Cyclical,28.0,34.6,27.0,20.2,27.0,27.4,322.39,25.48,-92.1,Tier 4 — Low Priority / Avoid,General Watchlist,14.8,5.0,18.0
 2026-08-05,TXN,Texas Instruments Incorporated,Technology,64.7,70.4,55.0,68.0,66.4,63.0,276.82,158.73,-42.7,Tier 3 — Watchlist Only,General Watchlist,59.0,50.0,57.9
+2026-08-06,TPL,Texas Pacific Land Corporation,Energy,55.6,66.7,50.8,38.3,65.2,54.7,353.18,148.95,-57.8,Tier 4 — Low Priority / Avoid,General Watchlist,45.3,40.0,48.3
+2026-08-06,TXT,Textron Inc.,Industrials,29.6,29.7,26.0,37.3,23.7,31.1,88.09,109.32,24.1,Tier 4 — Low Priority / Avoid,General Watchlist,23.0,2.5,20.2
+2026-08-06,TMO,Thermo Fisher Scientific Inc,Healthcare,44.6,46.2,36.4,52.6,43.9,44.8,574.65,510.19,-11.2,Tier 4 — Low Priority / Avoid,General Watchlist,39.9,2.5,31.4
+2026-08-06,TJX,"TJX Companies, Inc. (The)",Consumer Cyclical,46.2,49.2,38.2,51.9,45.2,47.1,160.19,121.03,-24.4,Tier 4 — Low Priority / Avoid,General Watchlist,34.8,0.0,29.9
+2026-08-06,TKO,"TKO Group Holdings, Inc.",Communication Services,47.5,54.7,44.1,40.6,47.2,48.3,188.7,142.04,-24.7,Tier 4 — Low Priority / Avoid,General Watchlist,43.5,2.5,35.2
+2026-08-06,TTD,"The Trade Desk, Inc.",Communication Services,50.9,62.8,52.9,21.1,64.1,50.2,17.79,18.27,2.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,60.9,50.0,55.6
+2026-08-06,TSCO,Tractor Supply Company,Consumer Cyclical,24.0,25.7,21.2,24.0,24.6,24.7,33.9,13.76,-59.4,Tier 4 — Low Priority / Avoid,General Watchlist,4.9,0.0,11.2
+2026-08-06,TT,Trane Technologies plc,Industrials,56.6,61.6,49.1,53.0,64.0,56.3,480.79,405.0,-15.8,Tier 4 — Low Priority / Avoid,General Watchlist,54.2,25.0,47.2
+2026-08-06,TDG,Transdigm Group Incorporated,Industrials,55.8,64.7,51.0,42.7,63.8,55.6,1254.18,994.43,-20.7,Tier 4 — Low Priority / Avoid,General Watchlist,47.4,37.5,48.4
+2026-08-06,TRV,"The Travelers Companies, Inc.",Financial Services,76.5,78.0,66.4,81.8,83.1,76.2,383.1,689.49,80.0,Tier 2 — Worth Researching,"Position Trade Candidate, Healthy Business",75.4,75.0,74.3
+2026-08-06,TRMB,Trimble Inc.,Technology,38.9,45.1,34.9,33.7,40.0,39.0,58.28,44.57,-23.5,Tier 4 — Low Priority / Avoid,General Watchlist,36.5,0.0,28.4
+2026-08-06,TFC,Truist Financial Corporation,Financial Services,51.9,56.0,46.7,50.0,54.6,52.0,52.86,68.42,29.4,Tier 4 — Low Priority / Avoid,General Watchlist,49.5,25.0,44.0
+2026-08-06,TYL,"Tyler Technologies, Inc.",Technology,42.2,50.0,42.2,27.5,46.1,42.7,303.58,352.78,16.2,Tier 4 — Low Priority / Avoid,General Watchlist,48.0,25.0,40.8
+2026-08-06,TSN,"Tyson Foods, Inc.",Consumer Defensive,29.0,31.6,24.0,33.6,24.8,31.1,57.94,51.5,-11.1,Tier 4 — Low Priority / Avoid,General Watchlist,28.0,2.5,21.8
+2026-08-06,USB,U.S. Bancorp,Financial Services,53.0,53.8,44.3,63.7,51.6,52.8,64.03,78.8,23.1,Tier 4 — Low Priority / Avoid,General Watchlist,49.8,37.5,46.7
+2026-08-06,UBER,"Uber Technologies, Inc.",Technology,43.7,49.8,43.3,32.7,46.5,44.1,68.71,102.13,48.6,Tier 4 — Low Priority / Avoid,General Watchlist,44.6,12.5,36.8
+2026-08-06,UDR,"UDR, Inc.",Real Estate,52.9,58.0,49.6,43.2,60.6,53.3,38.15,45.52,19.3,Tier 4 — Low Priority / Avoid,General Watchlist,40.3,2.5,36.0
+2026-08-06,ULTA,"Ulta Beauty, Inc.",Consumer Cyclical,51.7,59.6,50.7,34.8,60.4,51.8,539.75,629.24,16.6,Tier 4 — Low Priority / Avoid,General Watchlist,47.1,12.5,40.9
+2026-08-06,UNP,Union Pacific Corporation,Industrials,59.1,61.6,50.7,62.5,63.8,58.8,295.06,307.07,4.1,Tier 4 — Low Priority / Avoid,General Watchlist,45.0,27.5,45.2
+2026-08-06,UAL,"United Airlines Holdings, Inc.",Industrials,32.4,28.1,28.3,54.1,19.2,31.9,131.18,259.38,97.7,Tier 4 — Low Priority / Avoid,General Watchlist,5.7,0.0,13.8
+2026-08-06,UPS,"United Parcel Service, Inc.",Industrials,33.7,33.7,32.0,37.1,32.0,34.4,103.83,162.42,56.4,Tier 4 — Low Priority / Avoid,General Watchlist,25.2,15.0,25.9
+2026-08-06,URI,"United Rentals, Inc.",Industrials,52.0,52.3,43.2,65.2,49.5,50.2,1162.38,804.86,-30.8,Tier 4 — Low Priority / Avoid,General Watchlist,29.3,30.0,37.0
+2026-08-06,UNH,UnitedHealth Group Incorporated,Healthcare,55.4,54.3,45.7,67.5,58.0,54.5,405.87,456.98,12.6,Tier 4 — Low Priority / Avoid,General Watchlist,52.3,27.5,45.6
+2026-08-06,UHS,"Universal Health Services, Inc.",Healthcare,32.4,35.1,31.9,31.0,29.0,33.4,170.99,225.11,31.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,30.5,2.5,24.6
+2026-08-06,VLO,Valero Energy Corporation,Energy,64.4,63.6,54.6,85.3,54.8,64.0,301.83,816.07,170.4,Tier 3 — Watchlist Only,Position Trade Candidate,64.6,75.0,65.5
+2026-08-06,VEEV,Veeva Systems Inc.,Healthcare,71.6,81.5,67.3,52.7,85.1,70.2,212.83,263.01,23.6,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",74.0,62.5,70.3
+2026-08-06,VTR,"Ventas, Inc.",Real Estate,47.6,49.4,41.1,57.3,40.8,48.7,92.33,70.91,-23.2,Tier 4 — Low Priority / Avoid,General Watchlist,29.9,2.5,29.5
+2026-08-06,VLTO,Veralto Corp,Industrials,58.2,65.1,53.7,45.1,69.2,58.3,96.73,110.31,14.0,Tier 4 — Low Priority / Avoid,General Watchlist,55.5,25.0,49.0
+2026-08-06,VRSN,"VeriSign, Inc.",Technology,59.2,64.1,51.4,55.0,68.4,58.9,291.74,267.87,-8.2,Tier 4 — Low Priority / Avoid,General Watchlist,50.0,15.0,44.2
+2026-08-06,VRSK,"Verisk Analytics, Inc.",Industrials,53.0,59.6,50.7,36.3,66.3,52.8,184.67,210.29,13.9,Tier 4 — Low Priority / Avoid,General Watchlist,44.4,27.5,43.9
+2026-08-06,VZ,Verizon Communications Inc.,Communication Services,44.1,45.0,41.4,42.0,48.7,45.2,46.81,60.54,29.3,Tier 4 — Low Priority / Avoid,Recovery Candidate,33.4,15.0,32.9
+2026-08-06,VRTX,Vertex Pharmaceuticals Incorpor,Healthcare,65.0,73.8,57.0,53.7,76.1,64.5,483.76,379.36,-21.6,Tier 3 — Watchlist Only,General Watchlist,65.7,37.5,58.0
+2026-08-06,VRT,"Vertiv Holdings, LLC",Industrials,69.9,78.2,63.7,62.8,75.6,66.5,283.24,193.2,-31.8,Tier 3 — Watchlist Only,General Watchlist,57.9,52.5,60.7
+2026-08-06,VTRS,Viatris Inc.,Healthcare,47.9,45.7,41.9,64.2,40.5,47.8,17.32,49.02,182.9,Tier 4 — Low Priority / Avoid,General Watchlist,50.6,52.5,48.9
+2026-08-06,VICI,VICI Properties Inc.,Real Estate,40.7,44.3,37.6,34.9,45.4,42.5,26.41,50.29,90.4,Tier 4 — Low Priority / Avoid,General Watchlist,31.2,0.0,27.4
+2026-08-06,V,Visa Inc.,Financial Services,64.9,71.4,55.7,56.3,78.7,64.6,367.12,139.66,-62.0,Tier 3 — Watchlist Only,General Watchlist,62.5,50.0,59.6
+2026-08-06,VST,Vistra Corp.,Utilities,34.5,41.3,34.4,24.0,35.5,33.3,142.15,128.7,-9.5,Tier 4 — Low Priority / Avoid,General Watchlist,8.6,7.5,19.2
+2026-08-06,VMC,Vulcan Materials Company (Holdi,Basic Materials,40.1,45.8,36.1,31.5,46.3,41.0,281.05,221.79,-21.1,Tier 4 — Low Priority / Avoid,General Watchlist,38.1,0.0,29.5
+2026-08-06,WRB,W.R. Berkley Corporation,Financial Services,57.8,65.5,54.0,42.5,68.6,58.6,71.69,76.44,6.6,Tier 4 — Low Priority / Avoid,General Watchlist,60.2,37.5,53.9
+2026-08-06,GWW,"W.W. Grainger, Inc.",Industrials,51.5,56.3,43.6,53.0,53.3,51.7,1270.34,892.76,-29.7,Tier 4 — Low Priority / Avoid,General Watchlist,43.0,15.0,38.7
+2026-08-06,WAB,Westinghouse Air Brake Technolo,Industrials,51.8,51.1,40.5,73.0,43.5,51.9,295.04,204.98,-30.5,Tier 4 — Low Priority / Avoid,General Watchlist,45.6,30.0,42.4
+2026-08-06,WMT,Walmart Inc.,Consumer Defensive,26.9,27.5,20.1,37.0,22.5,28.8,112.2,23.42,-79.1,Tier 4 — Low Priority / Avoid,General Watchlist,12.8,0.0,14.6
+2026-08-06,DIS,Walt Disney Company (The),Communication Services,30.4,30.8,24.5,37.9,28.9,31.4,103.49,70.58,-31.8,Tier 4 — Low Priority / Avoid,General Watchlist,29.8,0.0,21.9
+2026-08-06,WBD,"Warner Bros. Discovery, Inc. - ",Communication Services,46.0,47.1,44.3,46.6,46.4,45.4,26.46,105.22,297.6,Tier 4 — Low Priority / Avoid,General Watchlist,31.4,5.0,30.4
+2026-08-06,WM,"Waste Management, Inc.",Industrials,37.6,41.7,34.0,33.1,40.9,38.7,224.64,139.79,-37.8,Tier 4 — Low Priority / Avoid,General Watchlist,19.3,0.0,21.8
+2026-08-06,WAT,Waters Corporation,Healthcare,47.6,51.6,42.0,53.8,40.8,47.6,394.39,115.21,-70.8,Tier 4 — Low Priority / Avoid,General Watchlist,45.8,25.0,40.9
+2026-08-06,WEC,"WEC Energy Group, Inc.",Utilities,30.6,32.5,25.1,34.7,29.0,32.4,108.31,95.43,-11.9,Tier 4 — Low Priority / Avoid,General Watchlist,10.1,0.0,15.4
+2026-08-06,WFC,Wells Fargo & Company,Financial Services,48.8,52.5,42.9,47.8,52.3,49.0,87.66,108.21,23.5,Tier 4 — Low Priority / Avoid,General Watchlist,47.5,25.0,41.9
+2026-08-06,WELL,Welltower Inc.,Real Estate,56.8,59.9,47.3,68.7,50.3,57.4,234.83,84.61,-64.0,Tier 4 — Low Priority / Avoid,General Watchlist,37.7,27.5,41.8
+2026-08-06,WST,"West Pharmaceutical Services, I",Healthcare,55.2,56.4,43.2,72.2,51.1,54.0,348.1,170.7,-51.0,Tier 4 — Low Priority / Avoid,General Watchlist,46.1,52.5,49.5
+2026-08-06,WDC,Western Digital Corporation,Technology,73.1,78.2,65.8,72.6,77.8,70.1,477.11,829.6,73.9,Tier 3 — Watchlist Only,General Watchlist,66.2,65.0,67.6
+2026-08-06,WY,Weyerhaeuser Company,Real Estate,23.2,23.1,16.7,36.8,14.9,24.7,25.5,5.65,-77.8,Tier 4 — Low Priority / Avoid,General Watchlist,0.0,0.0,8.5
+2026-08-06,WSM,"Williams-Sonoma, Inc.",Consumer Cyclical,56.0,59.1,48.1,56.2,63.6,54.7,247.29,210.22,-15.0,Tier 4 — Low Priority / Avoid,General Watchlist,52.9,37.5,49.2
+2026-08-06,WMB,"Williams Companies, Inc. (The)",Energy,43.2,43.4,37.3,51.5,41.2,44.1,72.0,250.6,248.1,Tier 4 — Low Priority / Avoid,General Watchlist,19.8,0.0,23.5
+2026-08-06,WTW,Willis Towers Watson Public Lim,Financial Services,39.6,41.0,32.8,46.2,38.4,40.5,336.76,235.99,-29.9,Tier 4 — Low Priority / Avoid,General Watchlist,37.3,15.0,31.9
