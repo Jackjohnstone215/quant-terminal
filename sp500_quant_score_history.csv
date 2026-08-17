@@ -1764,3 +1764,11 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-08-14,PWR,"Quanta Services, Inc.",Industrials,45.0,44.7,35.3,68.1,31.3,44.6,680.0,414.76,-39.0,Tier 4 — Low Priority / Avoid,General Watchlist,30.3,27.5,33.9
 2026-08-14,QCOM,QUALCOMM Incorporated,Technology,51.2,56.0,48.0,39.1,63.9,50.2,165.75,193.69,16.9,Tier 4 — Low Priority / Avoid,Recovery Candidate,49.5,40.0,47.7
 2026-08-14,DGX,Quest Diagnostics Incorporated,Healthcare,41.9,39.8,31.4,65.6,31.3,43.2,235.5,228.0,-3.2,Tier 4 — Low Priority / Avoid,General Watchlist,38.4,25.0,34.9
+2026-08-17,WDAY,"Workday, Inc.",Technology,63.2,67.8,55.8,64.3,66.1,61.6,193.38,188.21,-2.7,Tier 3 — Watchlist Only,General Watchlist,66.8,62.5,63.4
+2026-08-17,WYNN,"Wynn Resorts, Limited",Consumer Cyclical,38.7,44.5,36.5,31.3,40.4,39.0,102.26,92.72,-9.3,Tier 4 — Low Priority / Avoid,General Watchlist,25.1,0.0,24.6
+2026-08-17,XEL,Xcel Energy Inc.,Utilities,29.1,28.9,22.0,39.8,25.8,30.8,78.77,54.49,-30.8,Tier 4 — Low Priority / Avoid,General Watchlist,8.4,0.0,13.8
+2026-08-17,XYL,Xylem Inc.,Industrials,42.5,47.5,38.0,36.9,47.1,43.4,118.89,128.96,8.5,Tier 4 — Low Priority / Avoid,General Watchlist,43.3,12.5,35.2
+2026-08-17,YUM,"Yum! Brands, Inc.",Consumer Cyclical,48.7,55.1,46.1,38.3,53.2,49.7,144.72,182.82,26.3,Tier 4 — Low Priority / Avoid,General Watchlist,32.9,15.0,35.1
+2026-08-17,ZBRA,Zebra Technologies Corporation,Technology,50.2,51.7,42.2,63.1,44.4,48.6,374.18,347.67,-7.1,Tier 4 — Low Priority / Avoid,General Watchlist,27.9,17.5,32.9
+2026-08-17,ZBH,"Zimmer Biomet Holdings, Inc.",Healthcare,45.9,49.6,42.0,44.3,46.2,46.7,99.15,119.48,20.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,43.1,12.5,36.5
+2026-08-17,ZTS,Zoetis Inc.,Healthcare,53.8,62.7,55.1,25.2,72.5,53.1,71.89,101.96,41.8,Tier 4 — Low Priority / Avoid,General Watchlist,57.1,37.5,51.9
