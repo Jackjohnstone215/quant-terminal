@@ -2047,3 +2047,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-08-24,DGX,Quest Diagnostics Incorporated,Healthcare,41.6,39.8,30.9,64.9,31.1,42.8,245.07,227.19,-7.3,Tier 4 — Low Priority / Avoid,General Watchlist,37.8,25.0,34.5
 2026-08-24,Q,"Qnity Electronics, Inc.",Technology,39.7,43.3,34.3,44.6,35.0,40.2,123.83,104.11,-15.9,Tier 4 — Low Priority / Avoid,General Watchlist,39.4,0.0,29.3
 2026-08-24,RL,Ralph Lauren Corporation,Consumer Cyclical,57.7,66.5,53.3,44.6,65.9,56.5,371.94,336.12,-9.6,Tier 4 — Low Priority / Avoid,General Watchlist,57.7,50.0,55.8
+2026-08-25,RJF,"Raymond James Financial, Inc.",Financial Services,60.5,66.7,55.8,54.5,63.7,60.4,175.42,256.87,46.4,Tier 3 — Watchlist Only,Recovery Candidate,59.6,50.0,57.5
+2026-08-25,RDDT,"Reddit, Inc.",Communication Services,67.7,84.0,66.8,33.5,84.1,64.7,154.84,87.13,-43.7,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",62.9,40.0,60.1
+2026-08-25,RTX,RTX Corporation,Industrials,48.1,50.3,39.2,58.6,44.3,48.9,208.69,174.7,-16.3,Tier 4 — Low Priority / Avoid,General Watchlist,43.7,15.0,37.3
+2026-08-25,O,Realty Income Corporation,Real Estate,50.7,57.7,45.6,43.8,53.5,51.6,62.87,46.9,-25.4,Tier 4 — Low Priority / Avoid,General Watchlist,31.8,2.5,32.1
+2026-08-25,REG,Regency Centers Corporation,Real Estate,50.9,55.6,47.1,44.7,55.3,52.0,76.45,94.35,23.4,Tier 4 — Low Priority / Avoid,General Watchlist,40.2,2.5,35.1
+2026-08-25,REGN,"Regeneron Pharmaceuticals, Inc.",Healthcare,66.6,72.2,59.5,62.3,73.4,65.5,830.17,993.84,19.7,Tier 3 — Watchlist Only,General Watchlist,68.2,50.0,62.3
+2026-08-25,RF,Regions Financial Corporation,Financial Services,46.2,49.1,38.7,47.9,50.7,46.2,30.42,29.25,-3.9,Tier 4 — Low Priority / Avoid,General Watchlist,44.5,12.5,36.3
+2026-08-25,RSG,"Republic Services, Inc.",Industrials,41.6,46.3,37.3,36.1,46.3,42.8,222.03,187.32,-15.6,Tier 4 — Low Priority / Avoid,General Watchlist,23.2,0.0,24.8
+2026-08-25,RMD,ResMed Inc.,Healthcare,59.0,69.0,53.5,40.4,73.3,58.8,233.54,201.73,-13.6,Tier 4 — Low Priority / Avoid,General Watchlist,59.9,25.0,51.0
+2026-08-25,RVTY,"Revvity, Inc.",Healthcare,53.2,53.3,43.3,64.7,54.5,52.7,123.49,113.28,-8.3,Tier 4 — Low Priority / Avoid,General Watchlist,53.3,37.5,47.8
+2026-08-25,HOOD,"Robinhood Markets, Inc.",Financial Services,57.0,61.3,49.3,59.7,59.6,53.5,106.23,44.42,-58.2,Tier 4 — Low Priority / Avoid,General Watchlist,35.0,17.5,38.2
+2026-08-25,ROK,"Rockwell Automation, Inc.",Industrials,52.0,58.4,46.6,45.1,57.8,51.2,430.99,328.54,-23.8,Tier 4 — Low Priority / Avoid,General Watchlist,43.2,15.0,39.4
+2026-08-25,ROL,"Rollins, Inc.",Consumer Cyclical,46.9,56.6,45.3,23.9,60.4,47.3,36.57,27.19,-25.6,Tier 4 — Low Priority / Avoid,General Watchlist,39.2,2.5,33.9
+2026-08-25,ROP,"Roper Technologies, Inc.",Technology,56.0,58.6,50.6,57.1,58.2,56.0,411.26,747.67,81.8,Tier 4 — Low Priority / Avoid,General Watchlist,44.6,15.0,41.2
+2026-08-25,ROST,"Ross Stores, Inc.",Consumer Cyclical,58.2,62.4,48.6,64.0,58.1,58.1,237.71,181.52,-23.6,Tier 4 — Low Priority / Avoid,General Watchlist,55.1,37.5,50.9
+2026-08-25,RCL,Royal Caribbean Cruises Ltd.,Consumer Cyclical,26.9,29.2,23.9,24.9,30.3,26.4,292.29,211.31,-27.7,Tier 4 — Low Priority / Avoid,General Watchlist,1.7,0.0,11.1
+2026-08-25,SPGI,S&P Global Inc.,Financial Services,53.5,59.4,46.4,48.0,60.8,53.4,432.5,211.37,-51.1,Tier 4 — Low Priority / Avoid,General Watchlist,52.4,12.5,42.4
+2026-08-25,CRM,"Salesforce, Inc.",Technology,58.7,63.5,55.5,50.7,65.9,57.4,206.9,433.25,109.4,Tier 4 — Low Priority / Avoid,General Watchlist,49.5,40.0,50.6
+2026-08-25,SNDK,Sandisk Corporation,Technology,78.0,85.5,71.2,70.2,86.9,75.1,1521.82,1860.77,22.3,Tier 2 — Worth Researching,"Long-Term Compounder, Healthy Business",71.5,65.0,71.8
+2026-08-25,SBAC,SBA Communications Corporation,Real Estate,45.8,51.6,42.3,33.2,56.5,46.0,185.52,147.13,-20.7,Tier 4 — Low Priority / Avoid,General Watchlist,34.8,15.0,34.3
+2026-08-25,SLB,SLB Limited,Energy,39.1,39.1,31.2,51.3,35.1,39.9,53.65,40.69,-24.2,Tier 4 — Low Priority / Avoid,General Watchlist,37.9,0.0,27.8
+2026-08-25,STX,Seagate Technology Holdings PLC,Technology,64.4,69.5,55.8,66.9,67.2,61.0,810.34,292.91,-63.9,Tier 3 — Watchlist Only,General Watchlist,52.1,40.0,52.7
+2026-08-25,SRE,DBA Sempra,Utilities,32.6,36.1,27.1,33.0,33.4,33.9,84.22,54.14,-35.7,Tier 4 — Low Priority / Avoid,General Watchlist,13.5,0.0,17.5
+2026-08-25,NOW,"ServiceNow, Inc.",Technology,51.1,54.6,45.5,53.2,51.1,50.2,127.35,113.34,-11.0,Tier 4 — Low Priority / Avoid,General Watchlist,52.7,37.5,47.6
+2026-08-25,SHW,Sherwin-Williams Company (The),Basic Materials,43.7,48.8,41.0,34.6,49.9,43.8,347.26,356.09,2.5,Tier 4 — Low Priority / Avoid,General Watchlist,24.0,2.5,26.6
+2026-08-25,SPG,"Simon Property Group, Inc.",Real Estate,54.0,57.3,51.0,51.0,56.5,53.5,220.0,281.67,28.0,Tier 4 — Low Priority / Avoid,General Watchlist,34.9,15.0,37.4
+2026-08-25,SWKS,"Skyworks Solutions, Inc.",Technology,31.5,35.2,27.8,28.3,34.7,31.3,64.52,46.92,-27.3,Tier 4 — Low Priority / Avoid,General Watchlist,31.0,2.5,23.9
+2026-08-25,SJM,The J.M. Smucker Company,Consumer Defensive,48.8,47.9,43.6,58.8,45.8,49.6,124.81,250.88,101.0,Tier 4 — Low Priority / Avoid,General Watchlist,37.8,27.5,38.9
+2026-08-25,SW,Smurfit WestRock plc,Consumer Cyclical,26.3,25.6,20.6,39.9,18.7,27.3,48.45,33.14,-31.6,Tier 4 — Low Priority / Avoid,General Watchlist,25.0,0.0,18.5
+2026-08-25,SNA,Snap-On Incorporated,Industrials,68.6,77.1,64.4,49.8,83.4,68.7,393.87,525.21,33.3,Tier 3 — Watchlist Only,Healthy Business,70.9,37.5,61.9
+2026-08-25,SOLV,Solventum Corporation,Healthcare,38.0,34.4,26.4,60.2,34.1,38.7,90.54,72.36,-20.1,Tier 4 — Low Priority / Avoid,General Watchlist,23.8,5.0,22.8
+2026-08-25,SO,Southern Company (The),Utilities,36.4,39.9,30.9,34.9,39.6,37.7,90.17,65.31,-27.6,Tier 4 — Low Priority / Avoid,General Watchlist,14.5,0.0,19.4
+2026-08-25,LUV,Southwest Airlines Company,Industrials,27.9,31.2,26.2,31.6,18.5,28.7,40.86,43.95,7.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,19.4,2.5,18.8
+2026-08-25,SWK,"Stanley Black & Decker, Inc.",Industrials,48.0,46.7,41.5,60.4,44.8,47.5,98.15,127.2,29.6,Tier 4 — Low Priority / Avoid,General Watchlist,48.7,52.5,48.2
+2026-08-25,SBUX,Starbucks Corporation,Consumer Cyclical,32.8,31.4,24.4,50.0,26.3,33.5,106.81,37.85,-64.6,Tier 4 — Low Priority / Avoid,General Watchlist,15.1,0.0,17.1
+2026-08-25,STT,State Street Corporation,Financial Services,49.1,45.4,35.8,71.8,48.8,48.5,190.84,95.01,-50.2,Tier 4 — Low Priority / Avoid,General Watchlist,48.4,37.5,43.5
+2026-08-25,STLD,"Steel Dynamics, Inc.",Basic Materials,42.8,46.0,35.5,55.5,32.0,42.6,228.99,58.96,-74.3,Tier 4 — Low Priority / Avoid,General Watchlist,34.0,27.5,35.1
+2026-08-25,STE,STERIS plc (Ireland),Healthcare,42.9,48.4,38.1,38.3,45.1,43.9,235.79,230.01,-2.5,Tier 4 — Low Priority / Avoid,General Watchlist,42.4,12.5,35.1
+2026-08-25,SYK,Stryker Corporation,Healthcare,54.4,64.3,50.1,36.5,65.3,54.6,326.08,294.18,-9.8,Tier 4 — Low Priority / Avoid,General Watchlist,52.5,25.0,46.8
+2026-08-25,SMCI,"Super Micro Computer, Inc.",Technology,42.8,48.5,41.4,39.3,39.8,41.2,37.94,110.13,190.3,Tier 4 — Low Priority / Avoid,Recovery Candidate,27.5,17.5,31.2
+2026-08-25,SYF,Synchrony Financial,Financial Services,48.9,51.3,44.5,45.7,56.3,48.4,79.65,116.81,46.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,48.2,12.5,39.1
+2026-08-25,SNPS,"Synopsys, Inc.",Technology,46.9,57.3,48.0,25.0,53.7,46.7,398.64,328.86,-17.5,Tier 4 — Low Priority / Avoid,General Watchlist,49.1,15.0,40.9
+2026-08-25,SYY,Sysco Corporation,Consumer Defensive,29.8,30.7,26.1,34.5,27.1,31.1,83.22,85.8,3.1,Tier 4 — Low Priority / Avoid,General Watchlist,18.1,0.0,18.0
+2026-08-25,TMUS,"T-Mobile US, Inc.",Communication Services,44.0,50.3,46.1,24.7,53.1,44.5,181.29,249.05,37.4,Tier 4 — Low Priority / Avoid,Recovery Candidate,33.5,15.0,34.1
+2026-08-25,TROW,"T. Rowe Price Group, Inc.",Financial Services,76.8,87.8,73.4,53.3,93.0,75.3,112.14,150.95,34.6,Tier 2 — Worth Researching,"Long-Term Compounder, Recovery Candidate, Healthy Business",81.1,62.5,75.1
+2026-08-25,TTWO,"Take-Two Interactive Software, ",Communication Services,39.9,42.6,33.7,43.1,40.1,40.5,235.54,138.48,-41.2,Tier 4 — Low Priority / Avoid,General Watchlist,34.0,0.0,27.3
+2026-08-25,TPR,"Tapestry, Inc.",Consumer Cyclical,57.5,66.4,57.6,35.3,70.2,56.1,130.52,153.98,18.0,Tier 4 — Low Priority / Avoid,General Watchlist,40.5,17.5,42.2
+2026-08-25,TRGP,"Targa Resources, Inc.",Energy,44.1,40.5,32.2,69.0,37.9,43.8,289.59,89.86,-69.0,Tier 4 — Low Priority / Avoid,General Watchlist,19.9,5.0,23.7
+2026-08-25,TGT,Target Corporation,Consumer Defensive,48.1,42.8,34.8,79.7,39.1,47.4,162.39,155.05,-4.5,Tier 4 — Low Priority / Avoid,Position Trade Candidate,37.0,17.5,33.9
+2026-08-25,TEL,TE Connectivity plc,Technology,56.0,67.2,54.7,32.1,67.6,56.0,201.84,205.8,2.0,Tier 4 — Low Priority / Avoid,General Watchlist,54.6,25.0,48.7
+2026-08-25,TDY,Teledyne Technologies Incorpora,Technology,48.1,54.6,43.0,42.5,50.7,49.0,627.65,633.2,0.9,Tier 4 — Low Priority / Avoid,General Watchlist,46.9,12.5,38.8
+2026-08-25,TER,"Teradyne, Inc.",Technology,59.9,67.5,52.3,57.6,61.8,57.3,369.65,167.81,-54.6,Tier 4 — Low Priority / Avoid,General Watchlist,44.9,30.0,46.4
+2026-08-25,TSLA,"Tesla, Inc.",Consumer Cyclical,28.2,34.5,26.8,21.6,26.9,27.6,351.05,22.87,-93.5,Tier 4 — Low Priority / Avoid,General Watchlist,12.8,0.0,16.1
+2026-08-25,TXN,Texas Instruments Incorporated,Technology,61.3,69.9,54.5,53.6,66.4,59.9,258.63,168.39,-34.9,Tier 3 — Watchlist Only,General Watchlist,60.2,37.5,54.6
+2026-08-25,TPL,Texas Pacific Land Corporation,Energy,58.3,71.0,54.1,38.4,67.2,57.3,368.08,151.91,-58.7,Tier 4 — Low Priority / Avoid,General Watchlist,46.4,27.5,46.9
