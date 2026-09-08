@@ -2550,3 +2550,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-09-07,AZO,"AutoZone, Inc.",Consumer Cyclical,34.9,39.7,31.3,27.7,39.8,36.0,2983.29,2183.29,-26.8,Tier 4 — Low Priority / Avoid,General Watchlist,16.4,0.0,19.8
 2026-09-07,AVY,Avery Dennison Corporation,Consumer Cyclical,55.3,62.3,55.4,37.9,64.5,55.6,175.06,332.3,89.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,43.6,27.5,45.0
 2026-09-07,AXON,"Axon Enterprise, Inc.",Industrials,32.0,38.8,31.0,23.4,32.1,31.6,515.67,74.23,-85.6,Tier 4 — Low Priority / Avoid,General Watchlist,12.6,0.0,17.7
+2026-09-08,BKR,Baker Hughes Company,Energy,53.3,57.4,46.0,49.5,62.4,53.1,63.88,59.88,-6.3,Tier 4 — Low Priority / Avoid,General Watchlist,57.9,37.5,50.2
+2026-09-08,BALL,Ball Corporation,Consumer Cyclical,31.7,34.0,27.4,40.1,22.7,32.7,61.5,51.12,-16.9,Tier 4 — Low Priority / Avoid,General Watchlist,11.7,0.0,16.5
+2026-09-08,BAC,Bank of America Corporation,Financial Services,57.7,58.9,46.2,70.6,58.0,56.9,62.68,65.14,3.9,Tier 4 — Low Priority / Avoid,General Watchlist,57.1,62.5,57.0
+2026-09-08,BAX,Baxter International Inc.,Healthcare,41.4,39.8,36.0,56.0,34.5,41.3,24.89,70.24,182.2,Tier 4 — Low Priority / Avoid,General Watchlist,32.2,2.5,27.5
+2026-09-08,BDX,"Becton, Dickinson and Company",Healthcare,47.5,47.7,43.4,52.1,47.1,48.3,179.59,287.12,59.9,Tier 4 — Low Priority / Avoid,Recovery Candidate,40.3,27.5,39.5
+2026-09-08,BRK-B,Berkshire Hathaway Inc. New,Financial Services,60.2,68.8,54.6,43.9,73.4,60.9,504.54,1305879.53,258728.3,Tier 3 — Watchlist Only,General Watchlist,61.7,37.5,55.2
+2026-09-08,BBY,"Best Buy Co., Inc.",Consumer Cyclical,45.2,43.3,37.7,62.3,39.5,44.5,88.77,104.82,18.1,Tier 4 — Low Priority / Avoid,General Watchlist,45.3,50.0,45.0
+2026-09-08,TECH,Bio-Techne Corp,Healthcare,60.1,62.7,48.7,67.3,65.4,58.5,72.33,34.52,-52.3,Tier 3 — Watchlist Only,General Watchlist,56.0,37.5,51.3
+2026-09-08,BIIB,Biogen Inc.,Healthcare,41.8,41.0,33.6,56.1,37.4,42.3,213.42,207.92,-2.6,Tier 4 — Low Priority / Avoid,General Watchlist,41.6,12.5,33.2
+2026-09-08,BLK,"BlackRock, Inc.",Financial Services,69.5,80.4,62.2,54.1,80.7,68.3,1106.47,660.94,-40.3,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",71.1,62.5,68.1
+2026-09-08,BX,Blackstone Inc.,Financial Services,60.8,69.4,55.4,49.1,69.4,59.1,135.07,70.76,-47.6,Tier 3 — Watchlist Only,General Watchlist,55.7,15.0,47.4
+2026-09-08,XYZ,"Block, Inc.",Technology,27.6,27.7,21.8,39.8,21.1,26.9,80.31,18.34,-77.2,Tier 4 — Low Priority / Avoid,General Watchlist,15.3,0.0,15.4
+2026-09-08,BNY,The Bank of New York Mellon Cor,Financial Services,58.5,58.7,44.6,77.9,55.6,57.9,164.12,112.17,-31.7,Tier 4 — Low Priority / Avoid,Position Trade Candidate,55.6,50.0,53.2
+2026-09-08,BA,Boeing Company (The),Industrials,25.9,29.1,22.8,25.0,25.4,26.4,213.32,125.3,-41.3,Tier 4 — Low Priority / Avoid,General Watchlist,15.9,0.0,15.9
+2026-09-08,BKNG,Booking Holdings Inc. Common St,Consumer Cyclical,63.1,73.5,59.8,40.5,78.7,62.1,181.59,195.29,7.5,Tier 3 — Watchlist Only,Recovery Candidate,63.9,50.0,60.5
+2026-09-08,BSX,Boston Scientific Corporation,Healthcare,43.1,49.6,41.9,29.5,49.9,43.6,45.38,55.45,22.2,Tier 4 — Low Priority / Avoid,General Watchlist,42.9,15.0,36.6
+2026-09-08,BMY,Bristol-Myers Squibb Company,Healthcare,55.7,57.4,49.4,60.3,56.7,55.4,65.09,120.56,85.2,Tier 4 — Low Priority / Avoid,General Watchlist,53.3,40.0,50.1
+2026-09-08,AVGO,Broadcom Inc.,Technology,67.6,80.2,62.6,44.1,83.7,65.4,367.06,206.83,-43.7,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",68.5,50.0,63.7
+2026-09-08,BR,"Broadridge Financial Solutions,",Technology,52.1,59.1,51.6,34.0,63.3,52.0,169.02,299.31,77.1,Tier 4 — Low Priority / Avoid,General Watchlist,51.7,27.5,46.4
+2026-09-08,BRO,"Brown & Brown, Inc.",Financial Services,62.5,72.5,62.9,39.1,73.1,62.1,68.27,120.1,75.9,Tier 3 — Watchlist Only,Recovery Candidate,61.5,40.0,57.5
+2026-09-08,BF-B,Brown Forman Inc,Consumer Defensive,55.3,62.3,51.9,38.8,69.4,54.9,26.98,29.69,10.0,Tier 4 — Low Priority / Avoid,General Watchlist,55.9,25.0,48.1
+2026-09-08,BLDR,"Builders FirstSource, Inc.",Industrials,19.5,22.4,18.7,16.0,19.5,19.7,63.23,50.63,-19.9,Tier 4 — Low Priority / Avoid,General Watchlist,6.9,0.0,10.4
+2026-09-08,BG,Bunge Limited,Consumer Defensive,33.7,33.2,29.8,52.6,15.4,35.1,122.83,373.29,203.9,Tier 4 — Low Priority / Avoid,General Watchlist,11.3,0.0,17.0
+2026-09-08,BXP,"BXP, Inc.",Real Estate,44.9,47.2,40.5,44.2,48.9,44.6,66.27,60.14,-9.2,Tier 4 — Low Priority / Avoid,General Watchlist,35.3,2.5,30.5
+2026-09-08,CHRW,"C.H. Robinson Worldwide, Inc.",Industrials,37.5,43.5,34.5,34.8,33.9,37.9,151.12,146.8,-2.9,Tier 4 — Low Priority / Avoid,General Watchlist,28.3,2.5,25.7
+2026-09-08,CDNS,"Cadence Design Systems, Inc.",Technology,60.4,74.7,58.2,33.4,72.2,59.7,288.91,164.75,-43.0,Tier 3 — Watchlist Only,General Watchlist,55.5,25.0,50.8
+2026-09-08,CPT,Camden Property Trust,Real Estate,24.5,24.2,18.9,33.2,21.2,26.4,105.55,41.02,-61.1,Tier 4 — Low Priority / Avoid,General Watchlist,8.4,0.0,12.2
+2026-09-08,COF,Capital One Financial Corporati,Financial Services,50.8,55.9,44.8,50.5,51.0,50.4,215.37,223.66,3.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,50.2,37.5,46.8
+2026-09-08,CAH,"Cardinal Health, Inc.",Healthcare,44.1,42.0,36.7,61.9,36.2,45.0,240.15,508.53,111.8,Tier 4 — Low Priority / Avoid,General Watchlist,42.8,40.0,41.4
+2026-09-08,CCL,Carnival Corporation Ltd.,Consumer Cyclical,24.4,28.4,25.8,14.7,27.0,23.9,23.34,22.52,-3.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,10.7,5.0,15.3
+2026-09-08,CARR,Carrier Global Corporation,Industrials,18.8,20.1,16.0,23.1,14.6,20.0,59.52,22.42,-62.3,Tier 4 — Low Priority / Avoid,General Watchlist,3.8,0.0,8.7
+2026-09-08,CVNA,Carvana Co.,Consumer Cyclical,39.7,46.8,36.6,36.1,36.7,38.1,74.69,17.05,-77.2,Tier 4 — Low Priority / Avoid,General Watchlist,17.6,5.0,23.3
+2026-09-08,CASY,"Caseys General Stores, Inc.",Consumer Cyclical,36.9,38.4,29.5,51.9,25.9,38.2,748.45,419.12,-44.0,Tier 4 — Low Priority / Avoid,General Watchlist,20.8,5.0,22.5
+2026-09-08,CAT,"Caterpillar, Inc.",Industrials,48.1,51.6,41.2,53.8,45.5,46.7,827.0,362.6,-56.2,Tier 4 — Low Priority / Avoid,General Watchlist,18.5,0.0,24.8
+2026-09-08,CBOE,"Cboe Global Markets, Inc.",Financial Services,52.7,60.5,45.8,50.4,51.5,52.8,294.11,236.07,-19.7,Tier 4 — Low Priority / Avoid,General Watchlist,50.5,25.0,44.8
+2026-09-08,CBRE,CBRE Group Inc,Real Estate,29.0,30.8,24.8,33.7,25.4,30.0,143.78,134.89,-6.2,Tier 4 — Low Priority / Avoid,General Watchlist,18.4,0.0,17.7
+2026-09-08,CDW,CDW Corporation,Technology,31.1,29.2,27.9,42.6,24.7,31.1,145.0,220.76,52.2,Tier 4 — Low Priority / Avoid,General Watchlist,5.2,0.0,13.6
+2026-09-08,COR,"Cencora, Inc.",Healthcare,27.0,27.3,22.6,35.5,21.5,28.1,327.44,322.61,-1.5,Tier 4 — Low Priority / Avoid,General Watchlist,7.7,0.0,13.0
+2026-09-08,CNC,Centene Corporation,Healthcare,53.9,53.5,47.1,63.4,53.9,52.6,65.91,588.88,793.5,Tier 4 — Low Priority / Avoid,General Watchlist,49.3,40.0,47.6
+2026-09-08,CNP,"CenterPoint Energy, Inc (Holdin",Utilities,30.4,31.1,27.9,37.4,22.7,32.3,40.08,121.53,203.3,Tier 4 — Low Priority / Avoid,General Watchlist,9.3,0.0,15.4
+2026-09-08,CF,"CF Industries Holdings, Inc.",Basic Materials,78.6,84.9,71.0,74.8,84.6,77.5,133.75,363.64,171.9,Tier 2 — Worth Researching,"Long-Term Compounder, Healthy Business",77.8,87.5,79.9
+2026-09-08,CRL,Charles River Laboratories Inte,Healthcare,38.9,33.9,27.6,66.7,31.3,37.7,283.31,169.06,-40.3,Tier 4 — Low Priority / Avoid,General Watchlist,20.4,5.0,21.6
+2026-09-08,SCHW,Charles Schwab Corporation (The,Financial Services,62.7,68.5,53.7,62.0,67.7,62.2,108.46,87.22,-19.6,Tier 3 — Watchlist Only,General Watchlist,58.1,52.5,57.7
+2026-09-08,CHTR,"Charter Communications, Inc.",Communication Services,28.0,29.6,29.1,23.6,28.5,28.5,145.76,627.97,330.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,11.3,0.0,15.6
+2026-09-08,CVX,Chevron Corporation,Energy,62.0,66.1,53.1,68.1,60.2,62.2,209.31,216.25,3.3,Tier 3 — Watchlist Only,General Watchlist,59.6,62.5,60.4
+2026-09-08,CMG,"Chipotle Mexican Grill, Inc.",Consumer Cyclical,36.5,38.5,31.9,39.1,37.3,36.0,37.07,22.46,-39.4,Tier 4 — Low Priority / Avoid,General Watchlist,15.0,0.0,19.3
+2026-09-08,CB,Chubb Limited,Financial Services,52.2,55.3,48.1,48.6,56.5,53.6,338.96,712.0,110.1,Tier 4 — Low Priority / Avoid,Recovery Candidate,52.5,25.0,45.4
+2026-09-08,CHD,"Church & Dwight Company, Inc.",Consumer Defensive,46.3,52.4,41.5,36.9,53.9,47.2,97.06,82.05,-15.5,Tier 4 — Low Priority / Avoid,General Watchlist,44.7,12.5,37.3
+2026-09-08,CIEN,Ciena Corporation,Technology,51.6,59.2,46.5,48.9,49.7,49.8,345.98,146.08,-57.8,Tier 4 — Low Priority / Avoid,General Watchlist,39.0,17.5,38.4
+2026-09-08,CI,The Cigna Group,Healthcare,36.7,38.8,35.0,35.3,36.1,38.1,277.22,762.55,175.1,Tier 4 — Low Priority / Avoid,Recovery Candidate,36.2,2.5,28.1
+2026-09-08,CINF,Cincinnati Financial Corporatio,Financial Services,75.8,88.1,73.3,51.7,87.2,75.6,169.4,543.39,220.8,Tier 2 — Worth Researching,"Long-Term Compounder, Recovery Candidate, Healthy Business",76.3,62.5,73.5
+2026-09-08,CTAS,Cintas Corporation,Industrials,54.6,61.9,48.3,44.5,64.2,54.8,200.38,127.46,-36.4,Tier 4 — Low Priority / Avoid,General Watchlist,45.4,25.0,43.8
+2026-09-08,CSCO,"Cisco Systems, Inc.",Technology,68.7,72.6,56.5,75.0,73.8,67.8,109.03,98.53,-9.6,Tier 3 — Watchlist Only,General Watchlist,64.9,50.0,61.1
+2026-09-08,C,"Citigroup, Inc.",Financial Services,51.3,51.1,39.7,70.5,45.7,50.6,137.58,146.91,6.8,Tier 4 — Low Priority / Avoid,General Watchlist,50.0,62.5,51.8
+2026-09-08,CFG,"Citizens Financial Group, Inc.",Financial Services,52.0,54.0,42.6,63.7,48.4,51.6,70.25,72.66,3.4,Tier 4 — Low Priority / Avoid,General Watchlist,50.7,37.5,46.6
