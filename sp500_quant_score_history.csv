@@ -3328,3 +3328,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-09-28,CSCO,"Cisco Systems, Inc.",Technology,69.1,72.7,56.2,76.6,74.0,68.1,106.74,94.91,-11.1,Tier 3 — Watchlist Only,Position Trade Candidate,64.9,50.0,61.1
 2026-09-28,C,"Citigroup, Inc.",Financial Services,47.4,50.7,38.8,54.8,45.7,47.1,131.34,138.8,5.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,44.6,25.0,39.8
 2026-09-28,CFG,"Citizens Financial Group, Inc.",Financial Services,49.3,53.6,42.0,52.9,48.4,49.1,64.8,68.65,6.0,Tier 4 — Low Priority / Avoid,General Watchlist,49.4,37.5,45.7
+2026-09-29,CLX,Clorox Company (The),Consumer Defensive,14.1,14.8,11.6,17.1,11.9,15.5,81.39,47.99,-41.0,Tier 4 — Low Priority / Avoid,General Watchlist,0.0,0.0,5.5
+2026-09-29,CME,CME Group Inc.,Financial Services,55.6,63.6,49.4,40.5,69.9,56.0,265.31,157.2,-40.7,Tier 4 — Low Priority / Avoid,General Watchlist,54.8,25.0,47.6
+2026-09-29,CMS,CMS Energy Corporation,Utilities,17.1,16.9,12.6,25.1,13.0,19.4,63.2,48.63,-23.0,Tier 4 — Low Priority / Avoid,General Watchlist,0.4,0.0,6.6
+2026-09-29,KO,Coca-Cola Company (The),Consumer Defensive,54.9,57.9,44.0,59.1,61.4,55.2,87.06,59.33,-31.9,Tier 4 — Low Priority / Avoid,General Watchlist,43.0,12.5,38.8
+2026-09-29,CTSH,Cognizant Technology Solutions ,Technology,46.4,52.5,45.0,33.1,54.0,46.7,56.19,120.07,113.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,51.5,37.5,46.4
+2026-09-29,COHR,Coherent Corp.,Technology,34.5,36.2,27.5,49.7,23.1,33.1,291.37,129.8,-55.5,Tier 4 — Low Priority / Avoid,General Watchlist,19.8,17.5,24.0
+2026-09-29,COIN,"Coinbase Global, Inc.",Financial Services,47.8,55.8,45.4,30.6,59.9,45.8,189.29,14.88,-92.1,Tier 4 — Low Priority / Avoid,General Watchlist,47.5,15.0,39.6
+2026-09-29,CL,Colgate-Palmolive Company,Consumer Defensive,49.0,55.1,46.3,35.2,59.3,49.3,86.33,88.47,2.5,Tier 4 — Low Priority / Avoid,General Watchlist,38.8,15.0,37.2
+2026-09-29,CMCSA,Comcast Corporation,Communication Services,36.3,40.9,38.0,21.3,43.6,37.5,21.54,53.8,149.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,31.4,15.0,30.2
+2026-09-29,FIX,"Comfort Systems USA, Inc.",Industrials,65.8,75.1,59.8,57.3,70.0,63.4,1661.55,1509.38,-9.2,Tier 3 — Watchlist Only,General Watchlist,57.6,40.0,56.2
+2026-09-29,COP,ConocoPhillips,Energy,53.3,59.7,48.0,52.9,49.5,53.7,125.6,137.69,9.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,52.1,37.5,48.8
+2026-09-29,ED,"Consolidated Edison, Inc.",Utilities,39.0,43.0,36.9,36.6,36.7,40.7,103.47,439.7,325.0,Tier 4 — Low Priority / Avoid,General Watchlist,18.2,0.0,22.3
+2026-09-29,STZ,"Constellation Brands, Inc.",Consumer Defensive,57.7,67.5,58.5,28.9,75.3,57.3,112.12,223.18,99.1,Tier 4 — Low Priority / Avoid,Recovery Candidate,50.4,27.5,48.6
+2026-09-29,CEG,Constellation Energy Corporatio,Utilities,23.5,26.9,21.2,25.7,17.5,23.9,265.02,205.19,-22.6,Tier 4 — Low Priority / Avoid,General Watchlist,0.0,0.0,9.5
+2026-09-29,COO,"The Cooper Companies, Inc.",Healthcare,42.4,49.8,42.0,26.1,49.6,42.9,56.1,67.89,21.0,Tier 4 — Low Priority / Avoid,Recovery Candidate,42.3,2.5,33.1
+2026-09-29,CPRT,"Copart, Inc.",Industrials,58.2,69.7,58.3,25.7,78.5,57.7,27.02,39.59,46.5,Tier 4 — Low Priority / Avoid,General Watchlist,63.3,25.0,52.8
+2026-09-29,GLW,Corning Incorporated,Technology,44.4,47.8,37.6,50.7,41.3,43.4,158.44,26.15,-83.5,Tier 4 — Low Priority / Avoid,General Watchlist,21.6,5.0,25.7
+2026-09-29,CPAY,"Corpay, Inc.",Technology,67.2,70.2,62.0,65.7,72.5,65.8,391.86,696.9,77.8,Tier 3 — Watchlist Only,General Watchlist,57.7,65.0,62.6
+2026-09-29,CTVA,"Corteva, Inc.",Basic Materials,48.9,54.9,42.2,39.2,60.0,49.7,78.06,64.02,-18.0,Tier 4 — Low Priority / Avoid,General Watchlist,49.2,12.5,39.6
+2026-09-29,CSGP,"CoStar Group, Inc.",Real Estate,47.8,60.3,46.5,25.7,54.3,47.7,26.66,20.45,-23.3,Tier 4 — Low Priority / Avoid,General Watchlist,52.1,25.0,44.6
+2026-09-29,COST,Costco Wholesale Corporation,Consumer Defensive,34.5,39.2,28.5,34.1,34.4,36.1,924.34,442.82,-52.1,Tier 4 — Low Priority / Avoid,General Watchlist,21.9,2.5,21.9
+2026-09-29,CRH,CRH PLC,Basic Materials,36.4,43.7,34.0,23.4,42.7,36.9,83.45,75.1,-10.0,Tier 4 — Low Priority / Avoid,General Watchlist,35.3,0.0,27.4
+2026-09-29,CRWD,"CrowdStrike Holdings, Inc.",Technology,60.8,63.6,50.4,73.8,56.2,59.3,260.38,27.53,-89.4,Tier 3 — Watchlist Only,General Watchlist,57.2,50.0,55.3
+2026-09-29,CCI,Crown Castle Inc.,Real Estate,39.3,45.7,37.1,23.9,50.4,39.8,66.57,45.66,-31.4,Tier 4 — Low Priority / Avoid,General Watchlist,30.2,2.5,27.3
+2026-09-29,CSX,CSX Corporation,Industrials,53.3,58.4,46.0,51.3,58.1,52.8,46.87,30.18,-35.6,Tier 4 — Low Priority / Avoid,General Watchlist,39.0,15.0,38.1
+2026-09-29,CMI,Cummins Inc.,Industrials,34.8,39.1,30.2,34.6,33.4,35.4,522.32,459.25,-12.1,Tier 4 — Low Priority / Avoid,General Watchlist,35.1,0.0,26.0
+2026-09-29,CVS,CVS Health Corporation,Healthcare,35.0,34.6,31.1,45.6,27.1,36.1,86.65,154.66,78.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,24.5,2.5,22.7
+2026-09-29,DHR,Danaher Corporation,Healthcare,53.8,57.4,44.6,57.6,56.8,53.4,225.3,158.87,-29.5,Tier 4 — Low Priority / Avoid,General Watchlist,49.4,12.5,40.9
+2026-09-29,DRI,"Darden Restaurants, Inc.",Consumer Cyclical,25.5,26.0,23.2,30.0,21.6,27.1,194.94,219.94,12.8,Tier 4 — Low Priority / Avoid,General Watchlist,15.3,0.0,15.5
+2026-09-29,DDOG,"Datadog, Inc.",Technology,59.9,65.1,51.4,68.1,54.1,57.8,266.89,42.75,-84.0,Tier 4 — Low Priority / Avoid,General Watchlist,49.9,40.0,50.4
+2026-09-29,DVA,DaVita Inc.,Healthcare,40.1,41.2,37.6,45.0,35.4,40.1,174.78,345.32,97.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,29.9,2.5,26.9
+2026-09-29,DECK,Deckers Outdoor Corporation,Consumer Cyclical,60.5,73.9,63.1,21.3,82.2,59.4,77.72,139.52,79.5,Tier 3 — Watchlist Only,"Recovery Candidate, Healthy Business",69.1,50.0,62.4
+2026-09-29,DE,Deere & Company,Industrials,39.0,36.9,28.8,58.8,33.8,39.2,678.78,464.28,-31.6,Tier 4 — Low Priority / Avoid,General Watchlist,22.0,15.0,25.3
+2026-09-29,DELL,Dell Technologies Inc.,Technology,41.9,39.4,30.6,71.1,28.2,40.3,540.21,273.73,-49.3,Tier 4 — Low Priority / Avoid,General Watchlist,21.3,7.5,23.9
+2026-09-29,DAL,"Delta Air Lines, Inc.",Industrials,36.7,34.3,32.6,54.2,24.8,36.6,84.5,166.42,97.0,Tier 4 — Low Priority / Avoid,General Watchlist,27.1,15.0,27.0
+2026-09-29,DVN,Devon Energy Corporation,Energy,43.7,47.9,37.5,50.7,36.1,44.2,46.48,49.64,6.8,Tier 4 — Low Priority / Avoid,General Watchlist,31.7,2.5,28.8
+2026-09-29,DXCM,"DexCom, Inc.",Healthcare,69.7,76.7,60.4,66.6,76.7,67.6,86.25,73.98,-14.2,Tier 3 — Watchlist Only,General Watchlist,69.8,62.5,66.9
+2026-09-29,FANG,"Diamondback Energy, Inc.",Energy,63.2,73.1,63.3,46.8,65.3,63.1,183.5,326.8,78.1,Tier 3 — Watchlist Only,General Watchlist,62.1,25.0,54.3
+2026-09-29,DLR,"Digital Realty Trust, Inc.",Real Estate,48.5,55.5,47.5,38.0,50.1,49.1,175.75,202.46,15.2,Tier 4 — Low Priority / Avoid,General Watchlist,35.1,15.0,36.1
+2026-09-29,DG,Dollar General Corporation,Consumer Defensive,44.0,47.4,41.6,41.4,44.7,44.4,122.97,152.36,23.9,Tier 4 — Low Priority / Avoid,General Watchlist,30.3,2.5,28.9
+2026-09-29,DLTR,"Dollar Tree, Inc.",Consumer Defensive,46.4,52.3,47.0,34.1,50.4,46.4,113.32,189.39,67.1,Tier 4 — Low Priority / Avoid,General Watchlist,33.6,15.0,34.8
+2026-09-29,D,"Dominion Energy, Inc.",Utilities,29.5,30.9,27.9,32.7,23.8,31.5,60.6,316.26,421.8,Tier 4 — Low Priority / Avoid,General Watchlist,9.9,0.0,15.5
+2026-09-29,DPZ,Domino's Pizza Inc,Consumer Cyclical,37.7,43.1,36.5,25.8,44.1,38.3,298.61,334.7,12.1,Tier 4 — Low Priority / Avoid,General Watchlist,28.5,2.5,26.1
+2026-09-29,DASH,"DoorDash, Inc.",Consumer Cyclical,55.2,65.4,54.3,35.7,63.0,53.8,187.07,182.92,-2.2,Tier 4 — Low Priority / Avoid,General Watchlist,53.4,27.5,48.3
+2026-09-29,DOV,Dover Corporation,Industrials,43.2,49.0,39.4,36.6,46.1,43.9,189.3,216.97,14.6,Tier 4 — Low Priority / Avoid,General Watchlist,44.1,12.5,36.0
+2026-09-29,DOW,Dow Inc.,Basic Materials,28.6,31.1,27.9,32.7,18.5,29.3,27.49,35.87,30.5,Tier 4 — Low Priority / Avoid,General Watchlist,11.2,0.0,15.6
+2026-09-29,DHI,"D.R. Horton, Inc.",Consumer Cyclical,36.5,40.6,35.9,25.9,43.1,37.1,139.12,205.01,47.4,Tier 4 — Low Priority / Avoid,Recovery Candidate,40.6,25.0,35.5
+2026-09-29,DTE,DTE Energy Company,Utilities,21.8,23.4,17.8,25.9,18.6,23.7,122.06,94.79,-22.3,Tier 4 — Low Priority / Avoid,General Watchlist,3.1,0.0,9.6
+2026-09-29,DUK,Duke Energy Corporation (Holdin,Utilities,34.6,38.2,29.4,31.2,39.4,36.1,113.92,100.96,-11.4,Tier 4 — Low Priority / Avoid,General Watchlist,14.0,0.0,18.5
+2026-09-29,DD,"DuPont de Nemours, Inc.",Basic Materials,56.7,65.0,52.7,45.3,62.4,56.4,129.81,133.23,2.6,Tier 4 — Low Priority / Avoid,General Watchlist,62.2,37.5,54.0
+2026-09-29,ETN,"Eaton Corporation, PLC",Industrials,35.1,35.0,27.4,51.0,27.0,35.3,433.22,246.7,-43.1,Tier 4 — Low Priority / Avoid,General Watchlist,18.1,0.0,19.2
+2026-09-29,EBAY,eBay Inc.,Consumer Cyclical,59.3,67.3,53.7,49.3,66.6,58.2,106.12,94.67,-10.8,Tier 4 — Low Priority / Avoid,General Watchlist,53.9,15.0,46.1
+2026-09-29,ECHO,EchoStar Corporation,Communication Services,19.9,19.2,14.8,30.9,14.9,20.2,89.59,89.59,0.0,Tier 4 — Low Priority / Avoid,General Watchlist,0.0,0.0,7.2
+2026-09-29,ECL,Ecolab Inc.,Basic Materials,43.8,49.9,38.8,36.8,49.1,44.5,277.87,182.51,-34.3,Tier 4 — Low Priority / Avoid,General Watchlist,34.9,0.0,29.7
+2026-09-29,EIX,Edison International,Utilities,36.8,41.9,32.7,28.4,44.5,36.8,52.98,45.03,-15.0,Tier 4 — Low Priority / Avoid,General Watchlist,15.7,0.0,20.1
