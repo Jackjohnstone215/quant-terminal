@@ -3438,3 +3438,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-09-30,GM,General Motors Company,Consumer Cyclical,34.4,33.2,32.4,40.0,32.4,34.8,77.06,274.69,256.4,Tier 4 — Low Priority / Avoid,Recovery Candidate,29.2,27.5,30.5
 2026-09-30,GPC,Genuine Parts Company,Consumer Cyclical,31.9,30.7,27.7,41.3,28.1,32.9,126.56,158.23,25.0,Tier 4 — Low Priority / Avoid,General Watchlist,22.5,2.5,20.7
 2026-09-30,GILD,"Gilead Sciences, Inc.",Healthcare,57.7,61.7,54.4,53.6,60.9,57.6,150.15,204.65,36.3,Tier 4 — Low Priority / Avoid,General Watchlist,47.2,27.5,46.4
+2026-10-01,GPN,Global Payments Inc.,Industrials,53.4,59.1,53.8,43.4,54.6,53.3,80.31,532.19,562.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,45.9,27.5,44.9
+2026-10-01,GL,Globe Life Inc.,Financial Services,58.9,63.9,54.6,52.3,64.5,59.7,164.44,312.13,89.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,57.0,15.0,47.2
+2026-10-01,GDDY,GoDaddy Inc.,Technology,52.4,57.5,51.3,42.3,58.1,51.2,97.3,211.79,117.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,35.4,5.0,34.8
+2026-10-01,GS,"Goldman Sachs Group, Inc. (The)",Financial Services,46.2,54.1,40.8,39.7,48.4,45.3,892.48,788.14,-11.7,Tier 4 — Low Priority / Avoid,General Watchlist,43.9,25.0,39.9
+2026-10-01,HAL,Halliburton Company,Energy,44.1,49.2,40.6,38.3,47.3,44.5,31.8,34.66,9.0,Tier 4 — Low Priority / Avoid,Recovery Candidate,46.4,12.5,37.0
+2026-10-01,HIG,"The Hartford Insurance Group, I",Financial Services,62.1,73.0,61.0,37.3,74.4,62.9,125.06,355.26,184.1,Tier 3 — Watchlist Only,Recovery Candidate,64.8,37.5,57.9
+2026-10-01,HAS,"Hasbro, Inc.",Consumer Cyclical,59.8,67.1,58.6,45.2,67.0,59.3,89.38,209.58,134.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,55.9,27.5,50.8
+2026-10-01,HCA,"HCA Healthcare, Inc.",Healthcare,30.5,32.5,28.4,32.5,26.6,31.5,425.25,520.48,22.4,Tier 4 — Low Priority / Avoid,General Watchlist,19.1,0.0,18.9
+2026-10-01,DOC,"Healthpeak Properties, Inc.",Real Estate,60.3,67.2,58.4,48.6,65.2,60.2,19.45,43.95,125.9,Tier 3 — Watchlist Only,General Watchlist,61.5,25.0,52.3
+2026-10-01,HSIC,"Henry Schein, Inc.",Healthcare,32.3,31.3,25.6,48.3,23.0,33.7,84.67,91.76,8.4,Tier 4 — Low Priority / Avoid,General Watchlist,21.1,0.0,19.4
+2026-10-01,HSY,The Hershey Company,Consumer Defensive,54.4,64.2,55.3,29.5,66.4,54.7,159.21,222.91,40.0,Tier 4 — Low Priority / Avoid,Recovery Candidate,43.9,15.0,42.0
+2026-10-01,HPE,Hewlett Packard Enterprise Comp,Technology,51.1,50.3,42.0,73.5,38.7,49.6,64.83,69.21,6.8,Tier 4 — Low Priority / Avoid,General Watchlist,40.0,30.0,40.3
+2026-10-01,HLT,Hilton Worldwide Holdings Inc.,Consumer Cyclical,52.9,58.5,46.3,46.1,62.1,52.7,316.23,141.54,-55.2,Tier 4 — Low Priority / Avoid,General Watchlist,34.1,2.5,33.3
+2026-10-01,HD,"Home Depot, Inc. (The)",Consumer Cyclical,32.2,36.8,29.6,23.6,38.3,32.9,282.57,265.68,-6.0,Tier 4 — Low Priority / Avoid,General Watchlist,21.7,0.0,20.6
+2026-10-01,HONA,Honeywell Aerospace Inc.,Industrials,41.6,44.2,36.0,41.9,45.3,41.7,154.44,89.88,-41.8,Tier 4 — Low Priority / Avoid,General Watchlist,31.2,0.0,27.0
+2026-10-01,HON,Honeywell International Inc.,Industrials,43.4,48.8,38.3,37.5,48.9,43.7,214.22,210.47,-1.8,Tier 4 — Low Priority / Avoid,General Watchlist,29.3,0.0,27.4
+2026-10-01,HRL,Hormel Foods Corporation,Consumer Defensive,27.6,31.1,24.6,23.6,29.6,29.4,19.89,19.38,-2.6,Tier 4 — Low Priority / Avoid,General Watchlist,31.5,12.5,25.4
+2026-10-01,HST,"Host Hotels & Resorts, Inc.",Real Estate,61.6,64.2,55.7,61.7,66.4,61.1,22.52,44.72,98.6,Tier 3 — Watchlist Only,General Watchlist,63.5,25.0,52.4
+2026-10-01,HWM,Howmet Aerospace Inc.,Industrials,59.6,71.7,56.1,39.1,68.8,58.9,228.31,112.65,-50.7,Tier 4 — Low Priority / Avoid,General Watchlist,49.4,25.0,48.0
+2026-10-01,HPQ,HP Inc.,Technology,41.1,37.7,35.4,59.5,33.0,40.7,32.22,83.59,159.5,Tier 4 — Low Priority / Avoid,General Watchlist,41.5,27.5,36.6
+2026-10-01,HUBB,Hubbell Inc,Industrials,40.2,45.3,36.7,35.2,42.0,40.6,465.56,460.86,-1.0,Tier 4 — Low Priority / Avoid,General Watchlist,27.1,0.0,25.6
+2026-10-01,HUM,Humana Inc.,Healthcare,51.1,54.0,41.6,65.0,43.3,50.3,379.0,331.73,-12.5,Tier 4 — Low Priority / Avoid,General Watchlist,51.2,37.5,46.5
+2026-10-01,HBAN,Huntington Bancshares Incorpora,Financial Services,44.4,52.1,43.9,30.9,47.7,45.0,15.09,19.44,28.9,Tier 4 — Low Priority / Avoid,General Watchlist,45.4,25.0,40.7
+2026-10-01,HII,"Huntington Ingalls Industries, ",Industrials,27.1,30.6,26.5,27.4,19.7,28.5,272.6,833.26,205.7,Tier 4 — Low Priority / Avoid,General Watchlist,18.0,2.5,18.2
+2026-10-01,IBM,International Business Machines,Technology,43.4,48.2,43.3,27.3,55.0,43.6,226.9,299.82,32.1,Tier 4 — Low Priority / Avoid,General Watchlist,34.7,15.0,33.8
+2026-10-01,IEX,IDEX Corporation,Industrials,57.2,60.7,47.0,61.9,60.8,56.8,230.59,189.86,-17.7,Tier 4 — Low Priority / Avoid,General Watchlist,56.3,25.0,47.6
+2026-10-01,IDXX,"IDEXX Laboratories, Inc.",Healthcare,56.7,68.2,53.6,31.5,73.2,55.6,520.43,328.06,-37.0,Tier 4 — Low Priority / Avoid,General Watchlist,49.2,12.5,43.5
+2026-10-01,ITW,Illinois Tool Works Inc.,Industrials,49.0,55.6,44.5,36.8,59.3,48.9,260.99,248.32,-4.9,Tier 4 — Low Priority / Avoid,General Watchlist,35.7,2.5,32.7
+2026-10-01,ILMN,"Illumina, Inc.",Healthcare,61.2,62.3,50.1,71.1,65.7,58.8,270.03,146.19,-45.9,Tier 3 — Watchlist Only,General Watchlist,45.0,27.5,45.2
+2026-10-01,INCY,Incyte Corporation,Healthcare,80.0,90.8,74.9,64.2,89.1,78.8,118.93,203.57,71.2,Tier 2 — Worth Researching,"Long-Term Compounder, Healthy Business",80.8,62.5,76.0
+2026-10-01,IR,Ingersoll Rand Inc.,Industrials,41.9,48.3,38.5,32.6,46.5,42.2,75.62,76.55,1.2,Tier 4 — Low Priority / Avoid,General Watchlist,41.4,0.0,31.4
+2026-10-01,PODD,Insulet Corporation,Healthcare,46.1,59.0,45.7,23.0,52.2,45.5,130.59,101.91,-22.0,Tier 4 — Low Priority / Avoid,General Watchlist,46.7,15.0,39.7
+2026-10-01,INTC,Intel Corporation,Technology,37.7,36.0,28.1,62.5,25.2,36.3,120.72,18.98,-84.3,Tier 4 — Low Priority / Avoid,General Watchlist,19.2,30.0,27.5
+2026-10-01,IBKR,"Interactive Brokers Group, Inc.",Financial Services,57.6,64.4,51.1,54.5,60.2,55.7,85.88,51.6,-39.9,Tier 4 — Low Priority / Avoid,General Watchlist,46.7,15.0,42.6
+2026-10-01,ICE,Intercontinental Exchange Inc.,Financial Services,51.5,59.0,46.5,38.8,62.0,51.7,150.85,117.42,-22.2,Tier 4 — Low Priority / Avoid,General Watchlist,40.5,2.5,35.4
+2026-10-01,IFF,International Flavors & Fragran,Basic Materials,26.0,23.4,17.8,46.5,16.9,27.1,82.74,22.26,-73.1,Tier 4 — Low Priority / Avoid,General Watchlist,17.9,0.0,15.3
+2026-10-01,IP,International Paper Company,Consumer Cyclical,36.8,41.8,38.2,22.0,43.4,37.5,32.66,55.55,70.1,Tier 4 — Low Priority / Avoid,Recovery Candidate,38.6,2.5,29.7
+2026-10-01,INTU,Intuit Inc.,Technology,54.3,64.8,56.7,26.2,67.1,53.9,283.52,518.49,82.9,Tier 4 — Low Priority / Avoid,Recovery Candidate,60.7,37.5,53.7
+2026-10-01,ISRG,"Intuitive Surgical, Inc.",Healthcare,63.8,77.9,60.8,34.7,80.3,61.8,401.3,220.7,-45.0,Tier 3 — Watchlist Only,Healthy Business,58.8,37.5,56.1
+2026-10-01,IVZ,Invesco Ltd,Financial Services,50.7,54.5,44.7,56.8,45.2,50.0,30.2,14.13,-53.2,Tier 4 — Low Priority / Avoid,General Watchlist,54.4,50.0,51.2
+2026-10-01,INVH,Invitation Homes Inc.,Real Estate,45.7,50.7,43.9,39.3,46.4,46.6,26.32,40.68,54.6,Tier 4 — Low Priority / Avoid,General Watchlist,37.4,15.0,35.5
+2026-10-01,IQV,"IQVIA Holdings, Inc.",Healthcare,37.6,33.7,29.0,60.7,29.7,37.0,261.9,254.04,-3.0,Tier 4 — Low Priority / Avoid,General Watchlist,17.9,5.0,20.8
+2026-10-01,IRM,Iron Mountain Incorporated (Del,Real Estate,28.4,30.0,23.8,38.4,19.3,29.0,111.31,101.14,-9.1,Tier 4 — Low Priority / Avoid,General Watchlist,4.0,0.0,12.3
+2026-10-01,JBHT,"J.B. Hunt Transport Services, I",Industrials,50.9,58.5,46.7,45.3,50.6,50.5,226.69,192.05,-15.3,Tier 4 — Low Priority / Avoid,General Watchlist,48.6,12.5,40.6
+2026-10-01,JBL,Jabil Inc.,Technology,41.9,45.3,38.4,47.7,33.6,41.3,298.95,334.5,11.9,Tier 4 — Low Priority / Avoid,General Watchlist,20.9,0.0,23.8
+2026-10-01,JKHY,"Jack Henry & Associates, Inc.",Technology,49.0,57.0,45.7,32.1,60.3,49.7,144.0,139.75,-3.0,Tier 4 — Low Priority / Avoid,General Watchlist,48.5,12.5,40.1
+2026-10-01,J,Jacobs Solutions Inc.,Industrials,35.0,38.5,32.1,36.8,29.8,36.1,139.69,155.28,11.2,Tier 4 — Low Priority / Avoid,General Watchlist,32.5,0.0,25.5
+2026-10-01,JNJ,Johnson & Johnson,Healthcare,46.3,47.6,35.6,54.7,49.9,47.4,259.76,213.38,-17.9,Tier 4 — Low Priority / Avoid,General Watchlist,44.0,0.0,32.6
+2026-10-01,JCI,Johnson Controls International ,Industrials,54.8,57.8,45.2,59.4,59.0,54.3,151.0,96.98,-35.8,Tier 4 — Low Priority / Avoid,General Watchlist,49.0,15.0,41.6
+2026-10-01,JPM,JP Morgan Chase & Co.,Financial Services,54.8,60.9,49.3,49.3,59.5,54.8,331.93,472.64,42.4,Tier 4 — Low Priority / Avoid,General Watchlist,49.9,12.5,42.3
+2026-10-01,KVUE,Kenvue Inc.,Consumer Defensive,47.6,52.8,44.1,38.3,55.1,48.0,17.3,19.56,13.1,Tier 4 — Low Priority / Avoid,General Watchlist,37.7,2.5,32.9
+2026-10-01,KDP,Keurig Dr Pepper Inc.,Consumer Defensive,55.0,58.6,52.8,53.4,53.4,55.6,30.61,65.79,115.0,Tier 4 — Low Priority / Avoid,Recovery Candidate,44.9,27.5,44.7
+2026-10-01,KEY,KeyCorp,Financial Services,42.9,47.9,39.5,38.4,44.4,43.2,19.88,25.58,28.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,42.0,25.0,38.1
+2026-10-01,KEYS,Keysight Technologies Inc.,Technology,78.7,86.7,68.1,76.2,84.7,76.5,374.63,232.56,-37.9,Tier 2 — Worth Researching,"Long-Term Compounder, Position Trade Candidate, Healthy Business",76.7,75.0,76.0
+2026-10-01,KMB,Kimberly-Clark Corporation,Consumer Defensive,28.5,32.0,25.5,23.8,32.1,29.6,94.92,66.18,-30.3,Tier 4 — Low Priority / Avoid,General Watchlist,18.3,0.0,17.9
