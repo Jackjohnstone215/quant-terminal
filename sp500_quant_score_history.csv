@@ -4680,3 +4680,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-11-05,ZBRA,Zebra Technologies Corporation,Technology,49.4,52.5,45.0,55.1,44.0,48.1,325.22,373.87,15.0,Tier 4 — Low Priority / Avoid,General Watchlist,31.2,17.5,34.5
 2026-11-05,ZBH,"Zimmer Biomet Holdings, Inc.",Healthcare,51.4,50.0,41.3,70.0,45.7,51.7,106.09,119.11,12.3,Tier 4 — Low Priority / Avoid,General Watchlist,48.6,37.5,45.3
 2026-11-05,ZTS,Zoetis Inc.,Healthcare,57.2,61.9,53.1,45.0,71.4,56.0,81.97,103.03,25.7,Tier 4 — Low Priority / Avoid,General Watchlist,56.8,25.0,48.7
+2026-11-06,MMM,3M Company,Industrials,65.7,69.2,56.2,66.4,74.5,64.4,186.74,177.82,-4.8,Tier 3 — Watchlist Only,General Watchlist,55.0,40.0,54.3
+2026-11-06,AOS,A.O. Smith Corporation,Industrials,45.3,45.9,37.4,52.4,47.7,45.8,64.78,69.41,7.2,Tier 4 — Low Priority / Avoid,General Watchlist,44.9,0.0,32.8
+2026-11-06,ABT,Abbott Laboratories,Healthcare,37.6,36.7,28.7,54.1,31.6,38.5,110.36,96.04,-13.0,Tier 4 — Low Priority / Avoid,General Watchlist,35.5,0.0,26.2
+2026-11-06,ABBV,AbbVie Inc.,Healthcare,62.0,61.5,50.0,77.3,62.9,61.6,290.4,325.03,11.9,Tier 3 — Watchlist Only,Position Trade Candidate,49.3,40.0,50.1
+2026-11-06,ACN,Accenture plc,Technology,62.0,63.8,54.2,67.0,65.5,60.7,260.1,354.42,36.3,Tier 3 — Watchlist Only,General Watchlist,62.9,50.0,58.1
+2026-11-06,ADBE,Adobe Inc.,Technology,65.8,76.7,66.2,36.1,84.1,64.3,239.76,537.04,124.0,Tier 3 — Watchlist Only,"Recovery Candidate, Healthy Business",69.0,37.5,60.8
+2026-11-06,AMD,"Advanced Micro Devices, Inc.",Technology,53.3,60.7,46.0,50.5,56.2,51.0,445.4,140.33,-68.5,Tier 4 — Low Priority / Avoid,General Watchlist,48.2,27.5,44.4
+2026-11-06,AES,The AES Corporation,Utilities,28.6,25.8,25.1,44.1,18.6,29.4,14.89,68.9,362.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,9.2,0.0,14.0
+2026-11-06,AFL,AFLAC Incorporated,Financial Services,53.4,55.3,44.6,55.4,61.6,53.6,124.58,81.37,-34.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,53.9,15.0,42.9
+2026-11-06,A,"Agilent Technologies, Inc.",Healthcare,56.3,58.4,45.4,64.6,59.7,55.4,174.09,107.1,-38.5,Tier 4 — Low Priority / Avoid,General Watchlist,54.4,37.5,49.4
+2026-11-06,APD,"Air Products and Chemicals, Inc",Basic Materials,36.3,35.5,31.4,51.3,25.3,37.6,306.61,806.26,163.0,Tier 4 — Low Priority / Avoid,General Watchlist,16.5,0.0,19.7
+2026-11-06,ABNB,"Airbnb, Inc.",Consumer Cyclical,74.7,80.1,62.7,79.5,78.8,72.5,191.6,93.74,-51.1,Tier 3 — Watchlist Only,"Long-Term Compounder, Position Trade Candidate",67.7,62.5,67.6
+2026-11-06,AKAM,"Akamai Technologies, Inc.",Technology,20.6,22.6,18.7,22.8,16.6,20.5,83.04,56.61,-31.8,Tier 4 — Low Priority / Avoid,General Watchlist,8.4,0.0,11.1
+2026-11-06,ALB,Albemarle Corporation,Basic Materials,55.3,66.7,58.6,28.6,63.0,54.2,99.13,147.85,49.2,Tier 4 — Low Priority / Avoid,Recovery Candidate,55.3,40.0,52.9
+2026-11-06,ARE,Alexandria Real Estate Equities,Real Estate,50.5,56.3,50.8,34.5,60.1,50.0,44.81,72.03,60.7,Tier 4 — Low Priority / Avoid,General Watchlist,54.9,12.5,43.1
+2026-11-06,ALGN,"Align Technology, Inc.",Healthcare,58.6,65.0,53.8,49.4,67.4,56.9,163.51,193.97,18.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,52.0,15.0,45.1
+2026-11-06,ALLE,Allegion plc,Industrials,63.0,65.7,53.8,67.5,67.5,62.4,186.11,206.76,11.1,Tier 3 — Watchlist Only,General Watchlist,58.1,37.5,53.7
+2026-11-06,LNT,Alliant Energy Corporation,Utilities,38.1,36.0,30.8,55.0,30.9,39.4,72.63,124.72,71.7,Tier 4 — Low Priority / Avoid,General Watchlist,14.8,0.0,19.3
+2026-11-06,ALL,Allstate Corporation (The),Financial Services,56.2,54.9,47.7,67.0,58.3,57.0,257.52,608.64,136.3,Tier 4 — Low Priority / Avoid,General Watchlist,57.6,37.5,50.7
+2026-11-06,GOOGL,Alphabet Inc.,Communication Services,48.2,57.3,46.2,28.8,59.2,48.4,285.12,370.26,29.9,Tier 4 — Low Priority / Avoid,General Watchlist,43.3,2.5,35.7
+2026-11-06,GOOG,Alphabet Inc.,Communication Services,48.2,57.3,46.2,28.7,59.2,48.5,283.97,370.26,30.4,Tier 4 — Low Priority / Avoid,General Watchlist,43.2,2.5,35.7
+2026-11-06,MO,"Altria Group, Inc.",Consumer Defensive,64.9,64.8,55.8,72.6,69.7,64.8,76.18,108.06,41.8,Tier 3 — Watchlist Only,General Watchlist,53.5,40.0,53.3
+2026-11-06,AMZN,"Amazon.com, Inc.",Consumer Cyclical,35.9,38.2,29.5,37.5,39.9,36.2,261.35,245.58,-6.0,Tier 4 — Low Priority / Avoid,General Watchlist,27.6,0.0,23.3
+2026-11-06,AMCR,Amcor plc,Consumer Cyclical,47.5,46.9,43.4,54.7,45.3,48.3,44.86,273.58,509.9,Tier 4 — Low Priority / Avoid,Recovery Candidate,39.7,27.5,39.2
+2026-11-06,AEE,Ameren Corporation,Utilities,38.6,36.6,32.8,51.8,33.8,39.4,112.92,186.25,64.9,Tier 4 — Low Priority / Avoid,General Watchlist,16.6,0.0,20.3
+2026-11-06,AEP,American Electric Power Company,Utilities,35.2,34.5,30.4,47.6,26.9,36.9,126.81,480.64,279.0,Tier 4 — Low Priority / Avoid,General Watchlist,13.5,0.0,18.3
+2026-11-06,AXP,American Express Company,Financial Services,49.7,56.1,43.9,43.0,55.5,49.3,322.05,258.09,-19.9,Tier 4 — Low Priority / Avoid,General Watchlist,48.1,12.5,39.6
+2026-11-06,AIG,"American International Group, I",Financial Services,64.3,72.5,59.3,54.5,69.0,64.7,78.34,86.15,10.0,Tier 3 — Watchlist Only,Recovery Candidate,66.2,50.0,61.5
+2026-11-06,AMT,American Tower Corporation (REI,Real Estate,49.0,49.9,41.0,53.8,54.2,48.7,190.23,139.75,-26.5,Tier 4 — Low Priority / Avoid,General Watchlist,35.0,2.5,31.3
+2026-11-06,AWK,"American Water Works Company, I",Utilities,39.4,34.7,26.5,66.0,34.3,40.2,149.51,115.59,-22.7,Tier 4 — Low Priority / Avoid,General Watchlist,17.0,5.0,20.7
+2026-11-06,AMP,"Ameriprise Financial, Inc.",Financial Services,59.7,66.8,52.5,52.4,67.4,59.1,503.86,458.85,-8.9,Tier 4 — Low Priority / Avoid,Recovery Candidate,62.0,37.5,54.5
+2026-11-06,AME,"AMETEK, Inc.",Industrials,53.3,60.4,47.3,47.2,57.1,53.6,228.23,203.63,-10.8,Tier 4 — Low Priority / Avoid,General Watchlist,50.4,12.5,41.9
+2026-11-06,AMGN,Amgen Inc.,Healthcare,57.1,55.8,43.8,76.7,56.1,56.4,461.56,422.97,-8.4,Tier 4 — Low Priority / Avoid,Position Trade Candidate,43.1,27.5,42.6
+2026-11-06,APH,Amphenol Corporation,Technology,64.4,73.6,57.8,53.8,72.4,62.9,73.94,49.49,-33.1,Tier 3 — Watchlist Only,General Watchlist,60.9,37.5,56.2
+2026-11-06,ADI,"Analog Devices, Inc.",Technology,63.6,73.7,57.8,51.7,69.5,62.5,365.36,246.25,-32.6,Tier 3 — Watchlist Only,General Watchlist,60.7,25.0,52.9
+2026-11-06,AON,Aon plc,Financial Services,58.1,63.2,51.2,50.6,70.3,57.4,335.24,247.31,-26.2,Tier 4 — Low Priority / Avoid,General Watchlist,48.2,15.0,43.2
+2026-11-06,APA,APA Corporation,Energy,67.3,70.3,59.2,74.4,65.8,66.0,44.89,164.81,267.1,Tier 3 — Watchlist Only,General Watchlist,62.3,62.5,63.2
+2026-11-06,APO,"Apollo Global Management, Inc. ",Financial Services,31.7,36.5,29.2,25.0,35.2,31.7,117.14,19.1,-83.7,Tier 4 — Low Priority / Avoid,General Watchlist,36.1,12.5,28.5
+2026-11-06,AAPL,Apple Inc.,Technology,57.9,59.9,46.1,65.9,63.7,57.0,343.2,212.57,-38.1,Tier 4 — Low Priority / Avoid,General Watchlist,50.6,25.0,45.4
+2026-11-06,AMAT,"Applied Materials, Inc.",Technology,52.8,63.3,48.3,40.0,57.9,50.9,333.84,120.6,-63.9,Tier 4 — Low Priority / Avoid,General Watchlist,45.5,5.0,38.4
+2026-11-06,APP,Applovin Corporation,Communication Services,69.1,83.8,66.8,39.0,86.3,65.6,397.27,287.12,-27.7,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",61.0,40.0,59.6
+2026-11-06,APTV,Aptiv PLC,Consumer Cyclical,37.8,44.1,39.3,20.8,45.3,37.9,39.88,131.41,229.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,43.5,25.0,37.5
+2026-11-06,ACGL,Arch Capital Group Ltd.,Financial Services,62.7,63.6,54.7,65.4,70.4,63.3,107.52,256.42,138.5,Tier 3 — Watchlist Only,General Watchlist,66.1,75.0,65.9
+2026-11-06,ADM,Archer-Daniels-Midland Company,Consumer Defensive,29.4,30.0,26.1,40.6,17.6,31.6,70.63,281.44,298.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,19.2,0.0,18.4
+2026-11-06,ARES,Ares Management Corporation,Financial Services,34.0,34.5,28.9,37.8,36.8,33.2,134.19,31.48,-76.5,Tier 4 — Low Priority / Avoid,General Watchlist,18.7,0.0,19.3
+2026-11-06,ANET,"Arista Networks, Inc.",Technology,68.9,78.8,62.4,57.3,77.6,65.8,170.44,80.93,-52.5,Tier 3 — Watchlist Only,General Watchlist,55.9,40.0,56.7
+2026-11-06,AJG,Arthur J. Gallagher & Co.,Financial Services,49.9,50.4,39.5,68.8,40.9,49.8,282.6,88.78,-68.6,Tier 4 — Low Priority / Avoid,General Watchlist,37.0,27.5,38.3
+2026-11-06,AIZ,"Assurant, Inc.",Financial Services,51.3,48.8,41.7,72.6,43.3,52.1,306.95,392.73,27.9,Tier 4 — Low Priority / Avoid,General Watchlist,49.9,37.5,45.8
+2026-11-06,T,AT&T Inc.,Communication Services,38.6,42.1,39.0,29.4,42.6,40.0,21.78,44.61,104.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,29.8,2.5,27.1
+2026-11-06,ATO,Atmos Energy Corporation,Utilities,40.8,42.3,31.8,48.9,41.1,42.1,173.29,166.72,-3.8,Tier 4 — Low Priority / Avoid,General Watchlist,19.1,0.0,22.0
+2026-11-06,ADSK,"Autodesk, Inc.",Technology,70.2,80.3,64.9,52.9,83.6,68.3,262.45,252.45,-3.8,Tier 3 — Watchlist Only,"Long-Term Compounder, Healthy Business",69.6,37.5,61.7
+2026-11-06,ADP,"Automatic Data Processing, Inc.",Technology,59.5,59.6,49.3,71.1,61.3,58.9,303.37,349.0,15.0,Tier 4 — Low Priority / Avoid,General Watchlist,58.8,37.5,52.1
+2026-11-06,AZO,"AutoZone, Inc.",Consumer Cyclical,39.1,42.4,33.4,39.2,41.1,39.8,3237.31,2409.64,-25.6,Tier 4 — Low Priority / Avoid,General Watchlist,18.8,0.0,21.8
+2026-11-06,AVY,Avery Dennison Corporation,Consumer Cyclical,56.1,57.4,51.0,57.1,60.7,56.4,186.4,251.92,35.1,Tier 4 — Low Priority / Avoid,General Watchlist,44.7,27.5,44.4
+2026-11-06,AXON,"Axon Enterprise, Inc.",Industrials,30.5,38.7,30.4,19.8,29.0,30.1,317.38,69.22,-78.2,Tier 4 — Low Priority / Avoid,General Watchlist,10.8,0.0,16.7
