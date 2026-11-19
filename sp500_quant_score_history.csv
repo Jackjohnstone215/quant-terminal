@@ -5175,3 +5175,58 @@ Scan Date,Ticker,Company,Sector,Overall Quant Score,Investment Score,Opportunity
 2026-11-18,ECL,Ecolab Inc.,Basic Materials,44.7,44.1,34.9,59.9,41.5,45.2,300.68,155.82,-48.2,Tier 4 — Low Priority / Avoid,General Watchlist,25.1,0.0,25.2
 2026-11-18,EIX,Edison International,Utilities,36.0,35.3,32.4,38.3,40.1,36.3,63.01,118.89,88.7,Tier 4 — Low Priority / Avoid,General Watchlist,15.5,0.0,19.3
 2026-11-18,EW,Edwards Lifesciences Corporatio,Healthcare,68.4,72.9,55.9,72.9,74.8,68.1,105.23,56.49,-46.3,Tier 3 — Watchlist Only,General Watchlist,62.5,50.0,60.3
+2026-11-19,ELV,"Elevance Health, Inc.",Healthcare,54.3,57.5,49.0,51.4,60.6,54.3,390.16,741.76,90.1,Tier 4 — Low Priority / Avoid,Recovery Candidate,57.0,37.5,50.6
+2026-11-19,EME,"EMCOR Group, Inc.",Industrials,51.0,61.3,51.4,33.2,53.7,50.9,636.08,911.1,43.2,Tier 4 — Low Priority / Avoid,Recovery Candidate,52.8,37.5,49.3
+2026-11-19,EMR,Emerson Electric Company,Industrials,59.5,62.9,49.7,63.5,64.3,58.7,157.6,125.66,-20.3,Tier 4 — Low Priority / Avoid,General Watchlist,57.0,27.5,49.4
+2026-11-19,ETR,Entergy Corporation,Utilities,37.9,37.9,32.7,50.3,29.3,39.3,106.18,330.53,211.3,Tier 4 — Low Priority / Avoid,General Watchlist,16.3,0.0,20.3
+2026-11-19,EOG,"EOG Resources, Inc.",Energy,72.6,80.2,66.9,66.7,75.0,72.2,149.49,274.94,83.9,Tier 3 — Watchlist Only,"Long-Term Compounder, Recovery Candidate",73.5,62.5,70.2
+2026-11-19,EQT,EQT Corporation,Energy,51.7,59.3,50.2,31.2,66.1,52.5,49.3,58.42,18.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,55.0,37.5,50.0
+2026-11-19,EFX,"Equifax, Inc.",Industrials,50.8,58.2,47.2,39.8,57.6,49.8,176.51,162.12,-8.2,Tier 4 — Low Priority / Avoid,General Watchlist,40.7,2.5,35.2
+2026-11-19,EQIX,"Equinix, Inc.",Real Estate,48.6,50.9,40.5,57.7,45.5,48.4,1018.05,679.86,-33.2,Tier 4 — Low Priority / Avoid,General Watchlist,31.8,27.5,36.4
+2026-11-19,ERIE,Erie Indemnity Company,Financial Services,43.7,44.8,33.8,53.0,45.6,43.7,268.94,162.26,-39.7,Tier 4 — Low Priority / Avoid,General Watchlist,46.9,25.0,38.8
+2026-11-19,ESS,"Essex Property Trust, Inc.",Real Estate,49.8,52.7,43.3,48.1,56.6,50.4,269.39,268.91,-0.2,Tier 4 — Low Priority / Avoid,General Watchlist,35.2,2.5,32.3
+2026-11-19,EL,"Estee Lauder Companies, Inc. (T",Consumer Defensive,51.1,53.9,44.2,54.7,53.3,49.4,101.77,93.76,-7.9,Tier 4 — Low Priority / Avoid,General Watchlist,32.9,5.0,32.2
+2026-11-19,EG,"Everest Group, Ltd.",Financial Services,50.7,46.5,40.0,71.2,48.8,51.6,421.96,701.37,66.2,Tier 4 — Low Priority / Avoid,General Watchlist,52.1,50.0,49.1
+2026-11-19,EVRG,"Evergy, Inc.",Utilities,46.3,46.5,39.8,58.0,40.2,47.5,86.47,352.62,307.8,Tier 4 — Low Priority / Avoid,General Watchlist,22.5,5.0,26.9
+2026-11-19,P,"Everpure, Inc.",Technology,49.6,54.1,41.9,57.8,43.4,48.0,105.5,23.81,-77.4,Tier 4 — Low Priority / Avoid,General Watchlist,33.5,17.5,35.0
+2026-11-19,ES,Eversource Energy (D/B/A),Utilities,31.3,28.5,22.4,47.6,28.8,32.6,70.65,58.77,-16.8,Tier 4 — Low Priority / Avoid,General Watchlist,11.5,0.0,15.1
+2026-11-19,EXC,Exelon Corporation,Utilities,29.1,26.4,24.6,43.9,21.0,31.0,45.42,203.3,347.6,Tier 4 — Low Priority / Avoid,General Watchlist,9.5,0.0,14.3
+2026-11-19,EXE,Expand Energy Corporation,Energy,38.8,44.2,38.7,28.4,41.1,40.4,82.44,174.39,111.5,Tier 4 — Low Priority / Avoid,Recovery Candidate,41.5,12.5,33.9
+2026-11-19,EXPE,"Expedia Group, Inc.",Consumer Cyclical,54.1,60.5,54.1,40.2,60.8,52.8,239.19,337.67,41.2,Tier 4 — Low Priority / Avoid,Recovery Candidate,48.6,27.5,46.0
+2026-11-19,EXPD,Expeditors International of Was,Industrials,66.3,71.4,56.2,72.4,65.1,65.7,193.14,200.57,3.8,Tier 3 — Watchlist Only,General Watchlist,64.2,62.5,63.5
+2026-11-19,EXR,Extra Space Storage Inc,Real Estate,60.1,61.9,48.9,68.0,65.1,59.4,155.95,124.97,-19.9,Tier 3 — Watchlist Only,General Watchlist,42.3,27.5,44.1
+2026-11-19,XOM,ExxonMobil Holdings Corporation,Energy,51.8,55.8,43.1,59.1,48.4,52.5,158.93,150.92,-5.0,Tier 4 — Low Priority / Avoid,Recovery Candidate,50.5,37.5,47.0
+2026-11-19,FFIV,"F5, Inc.",Technology,57.4,66.6,53.4,41.7,66.6,56.9,318.09,329.47,3.6,Tier 4 — Low Priority / Avoid,General Watchlist,60.0,12.5,47.3
+2026-11-19,FDS,FactSet Research Systems Inc.,Financial Services,48.7,49.5,39.9,58.3,49.5,48.2,308.0,222.47,-27.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,50.9,27.5,42.9
+2026-11-19,FICO,Fair Isaac Corporation,Technology,57.7,70.7,61.5,25.1,69.7,56.0,677.64,1005.51,48.4,Tier 4 — Low Priority / Avoid,Recovery Candidate,41.8,30.0,46.8
+2026-11-19,FAST,Fastenal Company,Industrials,64.6,69.3,52.7,70.3,67.4,64.3,52.68,28.34,-46.2,Tier 3 — Watchlist Only,General Watchlist,56.5,40.0,54.3
+2026-11-19,FRT,Federal Realty Investment Trust,Real Estate,39.8,40.1,33.0,49.8,36.7,40.5,110.43,117.42,6.3,Tier 4 — Low Priority / Avoid,General Watchlist,29.6,2.5,26.0
+2026-11-19,FDX,FedEx Corporation,Industrials,49.6,51.2,46.0,51.9,49.6,49.5,314.64,531.08,68.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,50.0,25.0,43.2
+2026-11-19,FDXF,"FedEx Freight Holding Company, ",Industrials,31.4,32.2,25.5,38.8,28.9,32.0,126.58,89.46,-29.3,Tier 4 — Low Priority / Avoid,General Watchlist,12.5,0.0,16.2
+2026-11-19,FERG,Ferguson Enterprises Inc.,Industrials,40.7,40.6,34.8,50.6,37.6,40.9,247.39,277.29,12.1,Tier 4 — Low Priority / Avoid,General Watchlist,38.3,2.5,29.4
+2026-11-19,FIS,Fidelity National Information S,Technology,54.4,65.5,57.3,28.4,62.7,53.9,25.94,149.94,478.0,Tier 4 — Low Priority / Avoid,Recovery Candidate,44.9,27.5,45.8
+2026-11-19,FITB,Fifth Third Bancorp,Financial Services,47.9,51.2,39.9,55.1,45.1,47.8,50.85,43.92,-13.6,Tier 4 — Low Priority / Avoid,General Watchlist,48.2,37.5,44.5
+2026-11-19,FSLR,"First Solar, Inc.",Technology,51.5,61.7,50.3,24.8,69.4,49.9,151.95,202.94,33.6,Tier 4 — Low Priority / Avoid,Recovery Candidate,48.9,15.0,42.1
+2026-11-19,FE,FirstEnergy Corp.,Utilities,37.9,36.9,32.7,50.6,30.5,39.2,47.13,217.62,361.8,Tier 4 — Low Priority / Avoid,General Watchlist,14.7,0.0,19.6
+2026-11-19,FISV,"Fiserv, Inc.",Unknown,45.9,50.7,41.3,42.2,50.0,44.5,56.62,56.62,0.0,Tier 4 — Low Priority / Avoid,General Watchlist,36.4,0.0,30.7
+2026-11-19,FLEX,Flex Ltd.,Technology,33.4,40.1,32.0,30.5,26.8,32.2,74.22,43.69,-41.1,Tier 4 — Low Priority / Avoid,General Watchlist,17.6,0.0,19.8
+2026-11-19,F,Ford Motor Company,Consumer Cyclical,9.2,8.7,7.4,15.7,4.0,9.9,11.24,4.32,-61.6,Tier 4 — Low Priority / Avoid,General Watchlist,0.0,0.0,3.5
+2026-11-19,FTNT,"Fortinet, Inc.",Technology,69.5,80.1,62.4,57.2,77.8,67.9,131.46,84.72,-35.6,Tier 3 — Watchlist Only,Long-Term Compounder,65.2,50.0,62.9
+2026-11-19,FTV,Fortive Corporation,Technology,61.1,64.3,51.1,67.8,62.6,60.7,65.41,59.33,-9.3,Tier 3 — Watchlist Only,General Watchlist,58.9,37.5,53.2
+2026-11-19,FOXA,Fox Corporation,Communication Services,50.7,59.3,45.4,44.0,51.2,50.8,63.72,58.43,-8.3,Tier 4 — Low Priority / Avoid,Recovery Candidate,51.0,37.5,47.6
+2026-11-19,FOX,Fox Corporation,Communication Services,53.3,62.1,49.1,44.2,54.7,53.4,56.98,59.83,5.0,Tier 4 — Low Priority / Avoid,Recovery Candidate,53.9,37.5,49.8
+2026-11-19,BEN,"Franklin Templeton, Inc.",Financial Services,40.5,40.1,28.9,61.7,32.7,40.5,33.27,19.64,-41.0,Tier 4 — Low Priority / Avoid,Recovery Candidate,33.5,27.5,33.0
+2026-11-19,FCX,"Freeport-McMoRan, Inc.",Basic Materials,49.8,58.7,45.6,36.4,57.5,49.0,49.12,34.03,-30.7,Tier 4 — Low Priority / Avoid,General Watchlist,48.2,15.0,40.7
+2026-11-19,GRMN,Garmin Ltd.,Technology,62.6,68.6,51.5,65.3,66.3,61.9,271.78,207.49,-23.7,Tier 3 — Watchlist Only,General Watchlist,62.2,37.5,55.0
+2026-11-19,IT,"Gartner, Inc.",Technology,56.4,63.4,55.3,38.2,69.6,55.3,172.3,386.48,124.3,Tier 4 — Low Priority / Avoid,Recovery Candidate,58.9,37.5,52.9
+2026-11-19,GE,GE Aerospace,Industrials,52.8,57.7,45.3,50.0,59.9,52.1,318.88,181.3,-43.1,Tier 4 — Low Priority / Avoid,General Watchlist,43.3,12.5,38.7
+2026-11-19,GEHC,GE HealthCare Technologies Inc.,Healthcare,45.1,42.6,36.6,65.3,37.1,45.4,81.89,140.14,71.1,Tier 4 — Low Priority / Avoid,General Watchlist,42.4,25.0,37.6
+2026-11-19,GEV,GE Vernova Inc.,Industrials,66.1,78.1,66.6,40.9,75.6,65.0,756.28,1241.3,64.1,Tier 3 — Watchlist Only,General Watchlist,70.5,37.5,61.6
+2026-11-19,GEN,Gen Digital Inc.,Technology,68.6,71.8,62.7,67.3,75.2,66.5,30.15,53.12,76.2,Tier 3 — Watchlist Only,General Watchlist,49.8,55.0,57.7
+2026-11-19,GNRC,Generac Holdlings Inc.,Industrials,38.8,42.9,33.6,44.5,32.5,37.7,205.09,133.0,-35.1,Tier 4 — Low Priority / Avoid,General Watchlist,29.2,0.0,25.2
+2026-11-19,GD,General Dynamics Corporation,Industrials,45.1,48.1,40.9,47.1,42.5,46.7,347.34,505.25,45.5,Tier 4 — Low Priority / Avoid,General Watchlist,44.0,0.0,33.4
+2026-11-19,GIS,"General Mills, Inc.",Consumer Defensive,28.3,27.5,24.0,34.9,27.9,29.2,34.48,35.62,3.3,Tier 4 — Low Priority / Avoid,General Watchlist,20.5,0.0,17.9
+2026-11-19,GM,General Motors Company Common Stock,Consumer Cyclical,44.5,44.7,41.0,50.2,42.4,44.1,81.75,451.81,452.7,Tier 4 — Low Priority / Avoid,Recovery Candidate,36.5,27.5,36.9
+2026-11-19,GPC,Genuine Parts Company,Consumer Cyclical,33.4,31.0,27.3,48.0,28.2,34.3,121.54,145.25,19.5,Tier 4 — Low Priority / Avoid,General Watchlist,23.7,2.5,21.3
+2026-11-19,GILD,"Gilead Sciences, Inc.",Healthcare,59.2,58.8,52.1,67.5,61.1,59.0,166.53,248.14,49.0,Tier 4 — Low Priority / Avoid,General Watchlist,50.5,40.0,50.2
+2026-11-19,GPN,Global Payments Inc.,Industrials,55.0,59.0,53.5,52.1,53.7,54.6,83.52,470.88,463.8,Tier 4 — Low Priority / Avoid,Recovery Candidate,48.0,40.0,48.9
